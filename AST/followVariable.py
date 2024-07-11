@@ -92,6 +92,15 @@ def track_variable_flow(class_method, var_name): #변수 흐름 추적. (계속 
                                 if var_decl.initializer.qualifier == var_name:
                                     flow.append([var_decl.initializer.member,var_name])
                                     track_variable_flow(class_method,var_decl.name) # 같은 메서드에서 추적
+                
+                elif isinstance(node, javalang.tree.ForStatement): #for
+                    if isinstance(node.control, javalang.tree.EnhancedForControl):
+                        EFC = node.control
+                        if EFC.iterable.member == var_name:
+                            for var_decl in EFC.var.declarators:
+                                if isinstance(var_decl, javalang.tree.VariableDeclarator):
+                                    var_name_2 = var_decl.name
+                            track_variable_flow(class_method, var_name_2)
 
 
                                 
