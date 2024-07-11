@@ -81,26 +81,26 @@ def track_variable_flow(class_method, var_name): #변수 흐름 추적. (계속 
                 elif isinstance(node, javalang.tree.MethodInvocation): #메서드 호출일 때
                     if node.arguments: # 메서드 호출할때 매개변수가 존재하는지
                         for arg_index, arg in enumerate(node.arguments):
-                            if isinstance(arg, javalang.tree.MemberReference) and arg.member == var_name: #매개변수에 taint 변수가 있을 시
-                                print(node.qualifier)
-                                print(f"Qualifier Type: {type(node.qualifier)}")  # Qualifier의 타입 출력
-                                input()                             
+                            if isinstance(arg, javalang.tree.MemberReference) and arg.member == var_name: #매개변수에 taint 변수가 있을 시                         
                                 class_method_2, var_name_2 = call2method(node,arg_index) #매개변수로 넘어간경우
                                 var_name_2 = var_name if var_name_2 == None else var_name_2 # 소스코드에 없는 메서드 호출시 var_name_2 가 None 이 되는경우 방지
-                                
                                 track_variable_flow(class_method_2,var_name_2) # 재귀함수로 보내버리기~
-                                if isinstance(node.qualifier,javalang.tree.MemberReference):
-                                    print(node.qualifier)
-                                    input()
 
                 elif isinstance(node, javalang.tree.LocalVariableDeclaration): 
                         for var_decl in node.declarators:
                             if isinstance(var_decl.initializer, javalang.tree.MethodInvocation):
                                 if var_decl.initializer.qualifier == var_name:
                                     flow.append([var_decl.initializer.member,var_name])
-                                    
                                     track_variable_flow(class_method,var_decl.name) # 같은 메서드에서 추적
-                                    
+                
+                elif isinstance(node, javalang.tree.ForStatement): #for
+                    if isinstance(node.control, javalang.tree.EnhancedForControl):
+                        EFC = node.control
+                        if EFC.iterable.member == var_name:
+                            for var_decl in EFC.var.declarators:
+                                if isinstance(var_decl, javalang.tree.VariableDeclarator):
+                                    var_name_2 = var_decl.name
+                            track_variable_flow(class_method, var_name_2)
 
 
                                 
