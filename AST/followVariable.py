@@ -18,7 +18,7 @@ def call2method(node,arg_index):
                 if len(target_method_node.parameters) > arg_index: 
                     new_var_name = target_method_node.parameters[arg_index].name
                     return f"{target_class_name}.{invoked_method}", new_var_name
-    return None,None
+    return "UnknownClass."+invoked_method,None #만약 소스코드에 정의되지 않은 함수라면
 
 
 def parse_java_files(folder_path):
@@ -61,24 +61,21 @@ def extract_methods_and_find_tainted_variables(trees): #메서드 단위로 AST 
 def track_variable_flow(class_method, var_name): #변수 흐름 추적. (계속 추가 가능)
         global flow
 
-        if (class_method == None) or (var_name == None): #예외처리
-            return
+        # if (class_method == None): #예외처리
+        #     flow.append(class_method,var_name)
+        #     return
         
 
         class_name, method_name = class_method.split('.')
-        flow.append(class_method) # 흐름 추가
+        flow.append([class_method,var_name]) # 흐름 추가
 
         method_nodes = methods.get((class_name, method_name), []) #메서드 단위로 저장해둔 노드로 바로바로 접근가능
-        
         for file_path, method_node in method_nodes:
             for path, node in method_node: #노드 내부 탐색
                 if isinstance(node, javalang.tree.Assignment): #변수 할당일 때
-                    #클래스변수 할당일 때 taint=b (taint 사라짐)
-                    if isinstance(node.expressionl, javalang.tree.MemberReference) and node.expressionl.member == var_name:
-                        return
                     
                     # 클래스변수 할당일 때 b=taint (taint 늘어남)
-                    elif isinstance(node.expressionl, javalang.tree.MemberReference) and node.value.member == var_name:         
+                    if isinstance(node.expressionl, javalang.tree.MemberReference) and node.value.member == var_name:         
                         track_variable_flow(class_method,node.expressionl.member)
 
                 elif isinstance(node, javalang.tree.MethodInvocation): #메서드 호출일 때
@@ -86,15 +83,17 @@ def track_variable_flow(class_method, var_name): #변수 흐름 추적. (계속 
                         for arg_index, arg in enumerate(node.arguments):
                             if isinstance(arg, javalang.tree.MemberReference) and arg.member == var_name: #매개변수에 taint 변수가 있을 시
                                 class_method_2, var_name_2 = call2method(node,arg_index) #매개변수로 넘어간경우
+                                var_name_2 = var_name if var_name_2 == None else var_name_2 # 소스코드에 없는 메서드 호출시 var_name_2 가 None 이 되는경우 방지
                                 track_variable_flow(class_method_2,var_name_2) # 재귀함수로 보내버리기~
 
-                elif isinstance(node, javalang.tree.LocalVariableDeclaration): #split
-                    for var_decl in node.declarators:
-                        if isinstance(var_decl.initializer, javalang.tree.MethodInvocation) and var_decl.initializer.member == 'split':
-                            if var_decl.initializer.qualifier == var_name:
-                                track_variable_flow(class_method,var_decl.name) # 같은 메서드에서 추적
-
-                elif isinstance(node, javalang.tree.ForStatement): #for(그냥 ForControl은 필요 없을 듯)
+                elif isinstance(node, javalang.tree.LocalVariableDeclaration): 
+                        for var_decl in node.declarators:
+                            if isinstance(var_decl.initializer, javalang.tree.MethodInvocation):
+                                if var_decl.initializer.qualifier == var_name:
+                                    flow.append([var_decl.initializer.member,var_name])
+                                    track_variable_flow(class_method,var_decl.name) # 같은 메서드에서 추적
+                
+                elif isinstance(node, javalang.tree.ForStatement): #for
                     if isinstance(node.control, javalang.tree.EnhancedForControl):
                         EFC = node.control
                         if EFC.iterable.member == var_name:
@@ -110,7 +109,7 @@ def track_variable_flow(class_method, var_name): #변수 흐름 추적. (계속 
 def main():
     global flow
 
-    java_folder_path = './christmas/src/main/java/christmas'  # Specify the folder containing Java files
+    java_folder_path = 'C:/Users/조준형/Desktop/S개발자_프로젝트/Core1/AST/christmas'  # Specify the folder containing Java files
     
     # Step 1: Parse all Java files
     trees = parse_java_files(java_folder_path)
