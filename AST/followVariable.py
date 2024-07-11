@@ -58,9 +58,9 @@ def extract_methods_and_find_tainted_variables(trees): #메서드 단위로 AST 
     return tainted_variables
 
 
-def track_variable_flow(class_method, var_name): #변수 흐름 추적. (계속 추가 가능)
+def track_variable_flow(class_method, var_name, count=0): #변수 흐름 추적. (계속 추가 가능)
         global flow
-
+        current_count=0
         # if (class_method == None): #예외처리
         #     flow.append(class_method,var_name)
         #     return
@@ -72,11 +72,17 @@ def track_variable_flow(class_method, var_name): #변수 흐름 추적. (계속 
         method_nodes = methods.get((class_name, method_name), []) #메서드 단위로 저장해둔 노드로 바로바로 접근가능
         for file_path, method_node in method_nodes:
             for path, node in method_node: #노드 내부 탐색
+                current_count +=1
                 if isinstance(node, javalang.tree.Assignment): #변수 할당일 때
                     
                     # 클래스변수 할당일 때 b=taint (taint 늘어남)
                     if isinstance(node.expressionl, javalang.tree.MemberReference) and node.value.member == var_name:         
                         track_variable_flow(class_method,node.expressionl.member)
+
+                    #클래스변수 할당일 때 taint=b (taint 사라짐)
+                    if isinstance(node.expressionl, javalang.tree.MemberReference) and node.expressionl.member == var_name:
+                        if(count>current_count):
+                            return
 
                 elif isinstance(node, javalang.tree.MethodInvocation): #메서드 호출일 때
                     if node.arguments: # 메서드 호출할때 매개변수가 존재하는지
@@ -109,7 +115,7 @@ def track_variable_flow(class_method, var_name): #변수 흐름 추적. (계속 
 def main():
     global flow
 
-    java_folder_path = 'C:/Users/조준형/Desktop/S개발자_프로젝트/Core1/AST/christmas'  # Specify the folder containing Java files
+    java_folder_path = '난독화 대상 파일 경로'  # Specify the folder containing Java files
     
     # Step 1: Parse all Java files
     trees = parse_java_files(java_folder_path)
@@ -122,7 +128,7 @@ def main():
         track_variable_flow(class_method,var)
         flows[class_method,var] = flow # 다른 클래스의 같은이름의 메서드가 있을수 있기 때문에 key값은 두 변수 사용
 
-    for class_method, var in tainted_variables:
+    for class_method, var in tainted_variables: # 결과 print
         print("Tainted Variable: ")
         print(f"{class_method}, {var}")
         print("흐름 파악")
@@ -130,5 +136,16 @@ def main():
             print(f)
 
         print()
+
+    with open("result.txt", 'w', encoding='utf-8') as file: # 결과 파일 생성
+        for class_method, var in tainted_variables:
+            file.write("Tainted Variable:\n")
+            file.write(f"{class_method}, {var}\n")
+            file.write("흐름 파악\n")
+            for f in flows[class_method, var]:
+                file.write(f"{f}\n")
+            file.write("\n")
+
+
 if __name__ == "__main__":
     main()
