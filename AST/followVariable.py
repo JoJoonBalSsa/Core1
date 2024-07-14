@@ -1,3 +1,6 @@
+# count 신경쓰기!
+
+
 import javalang
 import os
 from collections import defaultdict
@@ -8,6 +11,7 @@ flow = []
 
 # 예제 Source 함수 배열, 나중에 변경 가능
 source_functions = ['Console.readLine']
+
 
 def call2method(node,arg_index):
     invoked_method = node.member
@@ -35,13 +39,14 @@ def parse_java_files(folder_path):
 
 def extract_methods_and_find_tainted_variables(trees): #메서드 단위로 AST 노드 저장, Taint 변수 탐색 및 저장
     global methods
-
+    count = 0
     methods = defaultdict(list)
     tainted_variables = []
 
     for file_path, tree in trees:
         current_class = "UnknownClass"
         for path, node in tree:
+            count = 0
             if isinstance(node, javalang.tree.ClassDeclaration):
                 current_class = node.name
             elif isinstance(node, javalang.tree.MethodDeclaration):
@@ -49,11 +54,18 @@ def extract_methods_and_find_tainted_variables(trees): #메서드 단위로 AST 
                 methods[(current_class, method_name)].append((file_path, node))
                 
                 for sub_path, sub_node in node:
-                    if isinstance(sub_node, javalang.tree.VariableDeclarator):
+                    count +=1 # 각각의 taint 변수가 생겨난 지점 식별
+                    if isinstance(sub_node, javalang.tree.VariableDeclarator):# 변수 선언 및 정의
                         if isinstance(sub_node.initializer, javalang.tree.MethodInvocation):
                             invoked_method = f"{sub_node.initializer.qualifier}.{sub_node.initializer.member}" if sub_node.initializer.qualifier else sub_node.initializer.member
-                            if invoked_method in source_functions:
-                                tainted_variables.append((f"{current_class}.{method_name}", sub_node.name))
+                            if invoked_method in source_functions:  
+                                tainted_variables.append((f"{current_class}.{method_name}", sub_node.name , count))
+                    elif isinstance(sub_node, javalang.tree.Assignment): #변수 할당일 때
+                        if isinstance(sub_node.value, javalang.tree.MethodInvocation):
+                            invoked_method = f"{sub_node.value.qualifier}.{sub_node.value.member}" if sub_node.value.qualifier else sub_node.value.member
+                            if invoked_method in source_functions: 
+                                tainted_variables.append((f"{current_class}.{method_name}", sub_node.expressionl.member , count))
+
     
     return tainted_variables
 
@@ -73,49 +85,117 @@ def track_variable_flow(class_method, var_name, count=0): #변수 흐름 추적.
         for file_path, method_node in method_nodes:
             for path, node in method_node: #노드 내부 탐색
                 current_count +=1
-                if isinstance(node, javalang.tree.Assignment): #변수 할당일 때
-                    
-                    # 클래스변수 할당일 때 b=taint (taint 늘어남)
-                    if isinstance(node.expressionl, javalang.tree.MemberReference) and node.value.member == var_name:         
-                        track_variable_flow(class_method,node.expressionl.member)
 
-                    #클래스변수 할당일 때 taint=b (taint 사라짐)
-                    if isinstance(node.expressionl, javalang.tree.MemberReference) and node.expressionl.member == var_name:
-                        if(count>current_count):
+
+
+                #######################################################################
+
+
+
+                if isinstance(node, javalang.tree.Assignment): #변수 할당일 때
+                    if isinstance(node.value, javalang.tree.MethodInvocation): # 2-2
+                        if node.value.arguments:
+                            for arg_index, arg in enumerate(node.value.arguments):
+                                if isinstance(arg, javalang.tree.MemberReference) and arg.member == var_name and (count<current_count):
+                                    flow.append([node.value.member,var_name])
+                                    track_variable_flow(class_method,node.expressionl.member,current_count) # 같은 메서드에서 추적
+                
+                    if isinstance(node.value, javalang.tree.MethodInvocation) and (node.value.qualifier == var_name) and (count<current_count):
+                        flow.append([node.value.member,var_name])
+                        track_variable_flow(class_method,var_decl.name,current_count) # 같은 메서드에서 추적
+
+
+                    if isinstance(node.expressionl, javalang.tree.MemberReference) and node.value.member == var_name and (count<current_count) : # 1-1
+                        track_variable_flow(class_method,node.expressionl.member,current_count)
+
+                    if isinstance(node.expressionl, javalang.tree.MemberReference) and node.expressionl.member == var_name and (count<current_count) : # 1-2
+                        #초기화 값이 Source 함수일 경우 추가 필요
+                        if count<current_count :
                             return
+                
+
+
+
+                #######################################################################
+
+
+
+
+                elif isinstance(node, javalang.tree.LocalVariableDeclaration):  # 지역변수 선언
+                        for var_decl in node.declarators:
+
+                            if isinstance(var_decl.initializer, javalang.tree.MethodInvocation): # 2-2
+                                if var_decl.initializer.arguments:
+                                    for arg_index, arg in enumerate(var_decl.initializer.arguments):
+                                        if isinstance(arg, javalang.tree.MemberReference) and arg.member == var_name and (count<current_count):
+                                            #flow.append([class_method,var_name]) 이건 MethodInvocation 노드에서 추가할 듯
+                                            track_variable_flow(class_method,var_decl.name,current_count) # 같은 메서드에서 추적
+
+                            if isinstance(var_decl.initializer, javalang.tree.MethodInvocation):
+                                if (var_decl.initializer.qualifier == var_name) and (count<current_count) : # 2-1
+                                    flow.append([var_decl.initializer.member,var_name])
+                                    track_variable_flow(class_method,var_decl.name,current_count) # 같은 메서드에서 추적
+
+                            if isinstance(var_decl.initializer, javalang.tree.MemberReference) and var_decl.initializer.member == var_name and (count<current_count) :  # 1-1
+                                track_variable_flow(class_method, var_decl.name,current_count)
+                
+
+
+
+                #######################################################################
+
+
+
 
                 elif isinstance(node, javalang.tree.MethodInvocation): #메서드 호출일 때
-                    if node.arguments: # 메서드 호출할때 매개변수가 존재하는지
+                    if node.arguments: 
                         for arg_index, arg in enumerate(node.arguments):
-                            if isinstance(arg, javalang.tree.MemberReference) and arg.member == var_name: #매개변수에 taint 변수가 있을 시
-                                class_method_2, var_name_2 = call2method(node,arg_index) #매개변수로 넘어간경우
+                            if isinstance(arg, javalang.tree.MemberReference) and arg.member == var_name and (count<current_count) : # 4-1                       
+                                print(node)
+                                input()
+                                class_method_2, var_name_2 = call2method(node,arg_index)
                                 var_name_2 = var_name if var_name_2 == None else var_name_2 # 소스코드에 없는 메서드 호출시 var_name_2 가 None 이 되는경우 방지
-                                track_variable_flow(class_method_2,var_name_2) # 재귀함수로 보내버리기~
+                                flow.append([class_method_2,var_name_2])
+                                track_variable_flow(class_method_2,var_name_2)
 
-                elif isinstance(node, javalang.tree.LocalVariableDeclaration): 
-                        for var_decl in node.declarators:
-                            if isinstance(var_decl.initializer, javalang.tree.MethodInvocation):
-                                if var_decl.initializer.qualifier == var_name:
-                                    flow.append([var_decl.initializer.member,var_name])
-                                    track_variable_flow(class_method,var_decl.name) # 같은 메서드에서 추적
-                
+
+
+
+                #######################################################################                
+
+
+
+
                 elif isinstance(node, javalang.tree.ForStatement): #for
                     if isinstance(node.control, javalang.tree.EnhancedForControl):
                         EFC = node.control
                         if EFC.iterable.member == var_name:
                             for var_decl in EFC.var.declarators:
-                                if isinstance(var_decl, javalang.tree.VariableDeclarator):
+                                if isinstance(var_decl, javalang.tree.VariableDeclarator) and (count<current_count) :
                                     var_name_2 = var_decl.name
-                            track_variable_flow(class_method, var_name_2)
+                                    flow.append([class_method,var_name_2])
+                                    track_variable_flow(class_method, var_name_2,current_count) # for 문 끝날때 까지만 추적하도록 수정 필요
 
 
                                 
 
-                
+def numbering(d, key_tuple, value):
+    if key_tuple in d:
+        base_key1, base_key2 = key_tuple
+        i = 1
+        new_key = (base_key1, f"{base_key2}_{i}")
+        while new_key in d:
+            i += 1
+            new_key = (base_key1, f"{base_key2}_{i}")
+        d[new_key] = value
+    else:
+        d[key_tuple] = value
+
+
 def main():
     global flow
 
-    java_folder_path = '난독화 대상 파일 경로'  # Specify the folder containing Java files
+    java_folder_path = 'C:/Users/조준형/Desktop/S개발자_프로젝트/Core1/AST/christmas'  # Specify the folder containing Java files
     
     # Step 1: Parse all Java files
     trees = parse_java_files(java_folder_path)
@@ -123,12 +203,14 @@ def main():
     tainted_variables = extract_methods_and_find_tainted_variables(trees)
     flows = {}
 
-    for class_method, var in tainted_variables:
+    for class_method, var , count in tainted_variables:
         flow = []
-        track_variable_flow(class_method,var)
-        flows[class_method,var] = flow # 다른 클래스의 같은이름의 메서드가 있을수 있기 때문에 key값은 두 변수 사용
+        track_variable_flow(class_method,var,count)
+        numbering(flows,(class_method,var),flow) # 같은 메서드에 같은 이름의 taint 변수가 생길 경우
+        # flows[class_method,var] = flow # 다른 클래스의 같은이름의 메서드가 있을수 있기 때문에 key값은 두 키워드(클래스,메서드) 사용
 
-    for class_method, var in tainted_variables: # 결과 print
+
+    for (class_method, var), value in flows.items():
         print("Tainted Variable: ")
         print(f"{class_method}, {var}")
         print("흐름 파악")
@@ -138,7 +220,7 @@ def main():
         print()
 
     with open("result.txt", 'w', encoding='utf-8') as file: # 결과 파일 생성
-        for class_method, var in tainted_variables:
+        for class_method, var,count in tainted_variables:
             file.write("Tainted Variable:\n")
             file.write(f"{class_method}, {var}\n")
             file.write("흐름 파악\n")
