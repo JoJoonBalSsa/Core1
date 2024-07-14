@@ -1,3 +1,6 @@
+# count 신경쓰기!
+
+
 import javalang
 import os
 from collections import defaultdict
@@ -82,6 +85,13 @@ def track_variable_flow(class_method, var_name, count=0): #변수 흐름 추적.
         for file_path, method_node in method_nodes:
             for path, node in method_node: #노드 내부 탐색
                 current_count +=1
+
+
+
+                #######################################################################
+
+
+
                 if isinstance(node, javalang.tree.Assignment): #변수 할당일 때
                     if isinstance(node.value, javalang.tree.MethodInvocation): # 2-2
                         if node.value.arguments:
@@ -102,7 +112,15 @@ def track_variable_flow(class_method, var_name, count=0): #변수 흐름 추적.
                         #초기화 값이 Source 함수일 경우 추가 필요
                         if count<current_count :
                             return
-                        
+                
+
+
+
+                #######################################################################
+
+
+
+
                 elif isinstance(node, javalang.tree.LocalVariableDeclaration):  # 지역변수 선언
                         for var_decl in node.declarators:
 
@@ -121,16 +139,32 @@ def track_variable_flow(class_method, var_name, count=0): #변수 흐름 추적.
                             if isinstance(var_decl.initializer, javalang.tree.MemberReference) and var_decl.initializer.member == var_name and (count<current_count) :  # 1-1
                                 track_variable_flow(class_method, var_decl.name,current_count)
                 
-                
+
+
+
+                #######################################################################
+
+
+
 
                 elif isinstance(node, javalang.tree.MethodInvocation): #메서드 호출일 때
                     if node.arguments: 
                         for arg_index, arg in enumerate(node.arguments):
                             if isinstance(arg, javalang.tree.MemberReference) and arg.member == var_name and (count<current_count) : # 4-1                       
+                                print(node)
+                                input()
                                 class_method_2, var_name_2 = call2method(node,arg_index)
                                 var_name_2 = var_name if var_name_2 == None else var_name_2 # 소스코드에 없는 메서드 호출시 var_name_2 가 None 이 되는경우 방지
                                 flow.append([class_method_2,var_name_2])
                                 track_variable_flow(class_method_2,var_name_2)
+
+
+
+
+                #######################################################################                
+
+
+
 
                 elif isinstance(node, javalang.tree.ForStatement): #for
                     if isinstance(node.control, javalang.tree.EnhancedForControl):
@@ -145,7 +179,7 @@ def track_variable_flow(class_method, var_name, count=0): #변수 흐름 추적.
 
                                 
 
-def add_to_dict_with_numbering(d, key_tuple, value): # 같은 메서드에 같은 taint 변수가 생길 경우
+def numbering(d, key_tuple, value):
     if key_tuple in d:
         base_key1, base_key2 = key_tuple
         i = 1
@@ -172,7 +206,7 @@ def main():
     for class_method, var , count in tainted_variables:
         flow = []
         track_variable_flow(class_method,var,count)
-        add_to_dict_with_numbering(flows,(class_method,var),flow)
+        numbering(flows,(class_method,var),flow) # 같은 메서드에 같은 이름의 taint 변수가 생길 경우
         # flows[class_method,var] = flow # 다른 클래스의 같은이름의 메서드가 있을수 있기 때문에 key값은 두 키워드(클래스,메서드) 사용
 
 
