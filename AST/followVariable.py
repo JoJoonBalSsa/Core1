@@ -78,9 +78,7 @@ def track_variable_flow(class_method, var_name): #변수 흐름 추적. (계속 
                     print(f"Node Type: {type(node).__name__}, Line: {line}, Column: {column}")
                     input()
                 if isinstance(node, javalang.tree.Assignment): #변수 할당일 때
-
-                    # 클래스변수 할당일 때 b=taint (taint 늘어남)
-                    if isinstance(node.expressionl, javalang.tree.MemberReference) and node.value.member == var_name:         
+                    if isinstance(node.expressionl, javalang.tree.MemberReference) and node.value.member == var_name: # 1-1
                         track_variable_flow(class_method,node.expressionl.member)
 
                 elif isinstance(node, javalang.tree.MethodInvocation): #메서드 호출일 때
