@@ -72,8 +72,13 @@ def track_variable_flow(class_method, var_name): #변수 흐름 추적. (계속 
         method_nodes = methods.get((class_name, method_name), []) #메서드 단위로 저장해둔 노드로 바로바로 접근가능
         for file_path, method_node in method_nodes:
             for path, node in method_node: #노드 내부 탐색
+                if hasattr(node, 'position') and node.position:
+                    line, column = node.position
+                    print(file_path)
+                    print(f"Node Type: {type(node).__name__}, Line: {line}, Column: {column}")
+                    input()
                 if isinstance(node, javalang.tree.Assignment): #변수 할당일 때
-                    
+
                     # 클래스변수 할당일 때 b=taint (taint 늘어남)
                     if isinstance(node.expressionl, javalang.tree.MemberReference) and node.value.member == var_name:         
                         track_variable_flow(class_method,node.expressionl.member)
