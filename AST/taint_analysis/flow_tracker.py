@@ -71,7 +71,7 @@ def track_variable_flow(class_method, var_name, count=0): #변수 흐름 추적.
                                 if var_decl.initializer.arguments:
                                     for arg_index, arg in enumerate(var_decl.initializer.arguments):
                                         if isinstance(arg, javalang.tree.MemberReference) and arg.member == var_name and (count<current_count):
-                                            #flow.append([class_method,var_name]) 이건 MethodInvocation 노드에서 추가할 듯
+                                            flow.append([class_method,var_decl.name])
                                             track_variable_flow(class_method,var_decl.name,current_count) # 같은 메서드에서 추적
 
                             if isinstance(var_decl.initializer, javalang.tree.MethodInvocation):

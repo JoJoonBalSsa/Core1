@@ -8,10 +8,8 @@ from collections import defaultdict
 def main():
     java_folder_path = 'C:/Users/조준형/Desktop/S개발자_프로젝트/Core1/AST/christmas'  # Specify the folder containing Java files
 
-    # Step 1: Parse all Java files
     trees = parse_java_files(java_folder_path)
 
-    # Step 2: Extract methods and find tainted variables
     tainted_variables = extract_methods_and_find_tainted_variables(trees)
     flows = defaultdict(list)
     
@@ -26,7 +24,7 @@ def main():
         # 만약 이미 해당 키가 있다면 기존 값에 flow를 추가
         flows[new_key].extend(flow)
 
-        
+
     for (class_method, var), value in flows.items():
         print("Tainted Variable: ")
         print(f"{class_method}, {var}")

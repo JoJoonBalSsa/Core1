@@ -5,7 +5,6 @@ import javalang
 import os
 from collections import defaultdict
 
-
 methods = []
 flow = []
 
@@ -151,8 +150,7 @@ def track_variable_flow(class_method, var_name, count=0): #변수 흐름 추적.
                     if node.arguments: 
                         for arg_index, arg in enumerate(node.arguments):
                             if isinstance(arg, javalang.tree.MemberReference) and arg.member == var_name and (count<current_count) : # 4-1                       
-                                print(node)
-                                input()
+
                                 class_method_2, var_name_2 = call2method(node,arg_index)
                                 var_name_2 = var_name if var_name_2 == None else var_name_2 # 소스코드에 없는 메서드 호출시 var_name_2 가 None 이 되는경우 방지
                                 flow.append([class_method_2,var_name_2])
@@ -202,7 +200,6 @@ def main():
     # Step 2: Extract methods and find tainted variables
     tainted_variables = extract_methods_and_find_tainted_variables(trees)
     flows = {}
-
     for class_method, var , count in tainted_variables:
         flow = []
         track_variable_flow(class_method,var,count)
