@@ -152,9 +152,7 @@ class taintAnalysis:
 
         if isinstance(node.value, javalang.tree.MethodInvocation) and (node.value.qualifier == var_name) and (count<current_count):
             self.flow.append([node.value.member,var_name])
-
-            # !!! bug here !!!
-            #self.track_variable_flow(class_method,var_decl.name,current_count) # 같은 메서드에서 추적
+            self.track_variable_flow(class_method,node.expressionl.member,current_count) # 같은 메서드에서 추적
 
         if isinstance(node.expressionl, javalang.tree.MemberReference) and node.value.member == var_name and (count<current_count) : # 1-1
             self.track_variable_flow(class_method,node.expressionl.member,current_count)
