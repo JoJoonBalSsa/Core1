@@ -19,7 +19,6 @@ def print_result(flows):
         print("흐름 파악")
         for f in flows[class_method, var]:
             print(f)
-
         print()
     
 
@@ -30,6 +29,7 @@ def main(java_folder_path, output_folder):
 
 
 if __name__ == "__main__":
+    # Specify the folder containing Java files
     java_folder_path = '/home/namaek_2/java-christmas-6-scienceNH'
-    # java_folder_path = 'C:/Users/조준형/Desktop/S개발자_프로젝트/Core1/AST/christmas'  # Specify the folder containing Java files
+    # java_folder_path = 'C:/Users/조준형/Desktop/S개발자_프로젝트/Core1/AST/christmas'  
     main(java_folder_path, java_folder_path)

@@ -15,14 +15,9 @@ class taintAnalysis:
         trees = self.parse_java_files(java_folder_path)
 
         # Step 2: Extract methods and find tainted variables
-        for file_path, tree in trees:
-            current_class = "UnknownClass"
-            for path, node in tree:
-                if isinstance(node, javalang.tree.ClassDeclaration):
-                    current_class = node.name
+        self.taint_analysis(trees)
 
-                elif isinstance(node, javalang.tree.MethodDeclaration):
-                    self.extract_methods(node, current_class, file_path)
+        # Step 3: Append flow
         self.append_flow()
 
 
@@ -38,6 +33,17 @@ class taintAnalysis:
                     tree = javalang.parse.parse(source_code)
                     trees.append((file_path, tree))
         return trees
+
+
+    def taint_analysis(self, trees):
+        for file_path, tree in trees:
+            current_class = "UnknownClass"
+            for path, node in tree:
+                if isinstance(node, javalang.tree.ClassDeclaration):
+                    current_class = node.name
+
+                elif isinstance(node, javalang.tree.MethodDeclaration):
+                    self.extract_methods(node, current_class, file_path)
 
 
     def extract_methods(self, node, current_class, file_path):
@@ -90,6 +96,7 @@ class taintAnalysis:
         else:
             return key_tuple
     
+
     def call2method(self, node, arg_index):
         invoked_method = node.member
         for target_class_method, target_method_nodes in self.methods.items():
@@ -101,105 +108,100 @@ class taintAnalysis:
                         return f"{target_class_name}.{invoked_method}", new_var_name
         return "UnknownClass." + invoked_method, None  # 만약 소스코드에 정의되지 않은 함수라면
 
+ 
     def track_variable_flow(self, class_method, var_name, count=0): #변수 흐름 추적. (계속 추가 가능)
-            current_count=0
-            # if (class_method == None): #예외처리
-            #     flow.append(class_method,var_name)
-            #     return
+        # if (class_method == None): #예외처리
+        #     flow.append(class_method,var_name)
+        #     return
 
-            class_name, method_name = class_method.split('.')
-            self.flow.append([class_method,var_name]) # 흐름 추가
-
-            method_nodes = self.methods.get((class_name, method_name), []) #메서드 단위로 저장해둔 노드로 바로바로 접근가능
-            for file_path, method_node in method_nodes:
-                for path, node in method_node: #노드 내부 탐색
-                    current_count +=1
-
-                    #######################################################################
+        class_name, method_name = class_method.split('.')
+        self.flow.append([class_method,var_name]) # 흐름 추가
+        method_nodes = self.methods.get((class_name, method_name), []) #메서드 단위로 저장해둔 노드로 바로바로 접근가능
+        
+        current_count=0
+        for file_path, method_node in method_nodes:
+            for path, node in method_node: #노드 내부 탐색
+                current_count +=1
 
 
+                #변수 할당일 때
+                if isinstance(node, javalang.tree.Assignment): 
+                    self.if_variable_assignment(node, class_method, var_name, count, current_count)
 
-                    if isinstance(node, javalang.tree.Assignment): #변수 할당일 때
-                        if isinstance(node.value, javalang.tree.MethodInvocation): # 2-2
-                            if node.value.arguments:
-                                for arg_index, arg in enumerate(node.value.arguments):
-                                    if isinstance(arg, javalang.tree.MemberReference) and arg.member == var_name and (count<current_count):
-                                        
-                                        self.flow.append([node.value.member,var_name])
-                                        self.track_variable_flow(class_method,node.expressionl.member,current_count) # 같은 메서드에서 추적
-                    
-                        if isinstance(node.value, javalang.tree.MethodInvocation) and (node.value.qualifier == var_name) and (count<current_count):
-                            self.flow.append([node.value.member,var_name])
+                # 지역변수 선언일 때
+                elif isinstance(node, javalang.tree.LocalVariableDeclaration):  
+                    self.if_local_variable_declaration(node, class_method, var_name, count, current_count)
+
+                # 메서드 호출일 때
+                elif isinstance(node, javalang.tree.MethodInvocation):
+                    self.if_call_method(node, class_method, var_name, count, current_count)
+
+                # for 문일 때
+                elif isinstance(node, javalang.tree.ForStatement): 
+                    self.if_for_statement(node, class_method, var_name, count, current_count)
+
+
+    def if_variable_assignment(self, node, class_method, var_name, count, current_count):
+        if isinstance(node.value, javalang.tree.MethodInvocation): # 2-2
+            if node.value.arguments:
+                for arg_index, arg in enumerate(node.value.arguments):
+                    if isinstance(arg, javalang.tree.MemberReference) and arg.member == var_name and (count<current_count):
+                        
+                        self.flow.append([node.value.member,var_name])
+                        self.track_variable_flow(class_method,node.expressionl.member,current_count) # 같은 메서드에서 추적
+
+        if isinstance(node.value, javalang.tree.MethodInvocation) and (node.value.qualifier == var_name) and (count<current_count):
+            self.flow.append([node.value.member,var_name])
+
+            # !!! bug here !!!
+            #self.track_variable_flow(class_method,var_decl.name,current_count) # 같은 메서드에서 추적
+
+        if isinstance(node.expressionl, javalang.tree.MemberReference) and node.value.member == var_name and (count<current_count) : # 1-1
+            self.track_variable_flow(class_method,node.expressionl.member,current_count)
+
+        if isinstance(node.expressionl, javalang.tree.MemberReference) and node.expressionl.member == var_name and (count<current_count) : # 1-2
+            #초기화 값이 Source 함수일 경우 추가 필요
+            if count<current_count :
+                return
+    
+
+    def if_local_variable_declaration(self, node, class_method, var_name, count, current_count):
+        for var_decl in node.declarators:
+            if isinstance(var_decl.initializer, javalang.tree.MethodInvocation): # 2-2
+                if var_decl.initializer.arguments:
+                    for arg_index, arg in enumerate(var_decl.initializer.arguments):
+                        if isinstance(arg, javalang.tree.MemberReference) and arg.member == var_name and (count<current_count):
+                            #flow.append([class_method,var_name]) 이건 MethodInvocation 노드에서 추가할 듯
                             self.track_variable_flow(class_method,var_decl.name,current_count) # 같은 메서드에서 추적
 
+            if isinstance(var_decl.initializer, javalang.tree.MethodInvocation):
+                if (var_decl.initializer.qualifier == var_name) and (count<current_count) : # 2-1
+                    self.flow.append([var_decl.initializer.member,var_name])
+                    self.track_variable_flow(class_method,var_decl.name,current_count) # 같은 메서드에서 추적
 
-                        if isinstance(node.expressionl, javalang.tree.MemberReference) and node.value.member == var_name and (count<current_count) : # 1-1
-                            self.track_variable_flow(class_method,node.expressionl.member,current_count)
-
-                        if isinstance(node.expressionl, javalang.tree.MemberReference) and node.expressionl.member == var_name and (count<current_count) : # 1-2
-                            #초기화 값이 Source 함수일 경우 추가 필요
-                            if count<current_count :
-                                return
-                    
+            if isinstance(var_decl.initializer, javalang.tree.MemberReference) and var_decl.initializer.member == var_name and (count<current_count) :  # 1-1
+                self.track_variable_flow(class_method, var_decl.name,current_count)
 
 
+    def if_call_method(self, node, class_method, var_name, count, current_count):
+       if node.arguments: 
+            for arg_index, arg in enumerate(node.arguments):
+                if isinstance(arg, javalang.tree.MemberReference) and arg.member == var_name and (count<current_count) : # 4-1                       
 
-                    #######################################################################
-
-
-
-
-                    elif isinstance(node, javalang.tree.LocalVariableDeclaration):  # 지역변수 선언
-                            for var_decl in node.declarators:
-
-                                if isinstance(var_decl.initializer, javalang.tree.MethodInvocation): # 2-2
-                                    if var_decl.initializer.arguments:
-                                        for arg_index, arg in enumerate(var_decl.initializer.arguments):
-                                            if isinstance(arg, javalang.tree.MemberReference) and arg.member == var_name and (count<current_count):
-                                                #flow.append([class_method,var_name]) 이건 MethodInvocation 노드에서 추가할 듯
-                                                self.track_variable_flow(class_method,var_decl.name,current_count) # 같은 메서드에서 추적
-
-                                if isinstance(var_decl.initializer, javalang.tree.MethodInvocation):
-                                    if (var_decl.initializer.qualifier == var_name) and (count<current_count) : # 2-1
-                                        self.flow.append([var_decl.initializer.member,var_name])
-                                        self.track_variable_flow(class_method,var_decl.name,current_count) # 같은 메서드에서 추적
-
-                                if isinstance(var_decl.initializer, javalang.tree.MemberReference) and var_decl.initializer.member == var_name and (count<current_count) :  # 1-1
-                                    self.track_variable_flow(class_method, var_decl.name,current_count)
-                    
+                    class_method_2, var_name_2 = self.call2method(node,arg_index)
+                    var_name_2 = var_name if var_name_2 == None else var_name_2 # 소스코드에 없는 메서드 호출시 var_name_2 가 None 이 되는경우 방지
+                    self.flow.append([class_method_2,var_name_2])
+                    self.track_variable_flow(class_method_2,var_name_2)
 
 
+    def if_for_statement(self, node, class_method, var_name, count, current_count):
+        if isinstance(node.control, javalang.tree.EnhancedForControl):
+            EFC = node.control
+            if EFC.iterable.member == var_name:
+                for var_decl in EFC.var.declarators:
+                    if isinstance(var_decl, javalang.tree.VariableDeclarator) and (count<current_count) :
+                        var_name_2 = var_decl.name
+                        self.flow.append([class_method,var_name_2])
+                        self.track_variable_flow(class_method, var_name_2,current_count) # for 문 끝날때 까지만 추적하도록 수정 필요
 
-                    #######################################################################
-
-
-
-
-                    elif isinstance(node, javalang.tree.MethodInvocation): #메서드 호출일 때
-                        if node.arguments: 
-                            for arg_index, arg in enumerate(node.arguments):
-                                if isinstance(arg, javalang.tree.MemberReference) and arg.member == var_name and (count<current_count) : # 4-1                       
-
-                                    class_method_2, var_name_2 = self.call2method(node,arg_index)
-                                    var_name_2 = var_name if var_name_2 == None else var_name_2 # 소스코드에 없는 메서드 호출시 var_name_2 가 None 이 되는경우 방지
-                                    self.flow.append([class_method_2,var_name_2])
-                                    self.track_variable_flow(class_method_2,var_name_2)
-
-
-
-
-                    #######################################################################                
-
-
-
-
-                    elif isinstance(node, javalang.tree.ForStatement): #for
-                        if isinstance(node.control, javalang.tree.EnhancedForControl):
-                            EFC = node.control
-                            if EFC.iterable.member == var_name:
-                                for var_decl in EFC.var.declarators:
-                                    if isinstance(var_decl, javalang.tree.VariableDeclarator) and (count<current_count) :
-                                        var_name_2 = var_decl.name
-                                        self.flow.append([class_method,var_name_2])
-                                        self.track_variable_flow(class_method, var_name_2,current_count) # for 문 끝날때 까지만 추적하도록 수정 필요
 
