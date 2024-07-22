@@ -136,7 +136,6 @@ class taintAnalysis:
                 current_count +=1
 
                 #변수 할당일 때
-                print(file_path)
                 if isinstance(node, javalang.tree.Assignment): 
                     self.__if_variable_assignment(node, class_method, var_name, count, current_count)
 
@@ -202,7 +201,6 @@ class taintAnalysis:
                 if isinstance(arg, javalang.tree.MemberReference) and arg.member == var_name and (count<current_count) : # 4-1                       
                     class_method_2, var_name_2 = self.__call2method(node,arg_index)
                     var_name_2 = var_name if var_name_2 == None else var_name_2 # 소스코드에 없는 메서드 호출시 var_name_2 가 None 이 되는경우 방지
-                    self.__flow.append([class_method_2,var_name_2])
                     self.__track_variable_flow(class_method_2,var_name_2)
 
     
