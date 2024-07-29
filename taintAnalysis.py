@@ -4,10 +4,41 @@ from collections import defaultdict
 
 class taintAnalysis:
     __methods = defaultdict(list)
-    __source_functions = ['Console.readLine']
+    __source_functions = [
+        # 사용자 입력
+        'next',
+        'nextLine',
+        'nextInt',
+        'nextDouble',
+        'readLine',
+
+
+        # 네트워크 입력
+        'getInputStream',
+        'getParameter',
+        'getParameterMap',
+        'getHeader',
+        'getCookies',
+
+        # 환경 변수
+        'getenv',
+        'getProperty',
+
+        # 데이터베이스 입력
+        'getString',
+        'getInt',
+        'getDouble',
+
+        # API 및 라이브러리 호출
+        'getData', # 예시: 외부 API 호출 반환값
+
+        # 세션 데이터
+        'getAttribute'
+    ]
     __tainted_variables = []
     __flow = []
     flows = defaultdict(list)
+    source_check = []
 
     #메서드 단위로 AST 노드 저장, Taint 변수 탐색 및 저장
     def __init__(self, java_folder_path): 
@@ -44,6 +75,12 @@ class taintAnalysis:
 
                 elif isinstance(node, javalang.tree.MethodDeclaration):
                     self.__extract_methods(node, current_class, file_path)
+                
+                elif isinstance(node, javalang.tree.ConstructorDeclaration):
+                    self.__extract_methods(node, current_class, file_path)
+
+
+
 
 
     def __extract_methods(self, node, current_class, file_path):
@@ -60,15 +97,25 @@ class taintAnalysis:
         # 변수 선언 및 정의일 때
         if isinstance(sub_node, javalang.tree.VariableDeclarator): 
             if isinstance(sub_node.initializer, javalang.tree.MethodInvocation):
-                invoked_method = f"{sub_node.initializer.qualifier}.{sub_node.initializer.member}" if sub_node.initializer.qualifier else sub_node.initializer.member
-                if invoked_method in self.__source_functions:  
+                if sub_node.initializer.member in self.__source_functions:  
                     self.__tainted_variables.append((f"{current_class}.{method_name}", sub_node.name , count))
+                    self.source_check.append((sub_node.name,sub_node.initializer.member,sub_node.initializer.qualifier))
+                
+            elif isinstance(sub_node.initializer, javalang.tree.ClassCreator):
+                for arg in sub_node.initializer.arguments:
+                    if isinstance(arg, javalang.tree.ClassCreator):
+                        for inner_arg in arg.arguments:
+                            if isinstance(inner_arg, javalang.tree.MethodInvocation):
+                                if inner_arg.member in self.__source_functions:
+                                    self.__tainted_variables.append((f"{current_class}.{method_name}", sub_node.name, count))
+                                    self.source_check.append((sub_node.name, inner_arg.member, inner_arg.qualifier))
+
         #변수 할당일 때
         elif isinstance(sub_node, javalang.tree.Assignment): 
             if isinstance(sub_node.value, javalang.tree.MethodInvocation):
-                invoked_method = f"{sub_node.value.qualifier}.{sub_node.value.member}" if sub_node.value.qualifier else sub_node.value.member
-                if invoked_method in self.__source_functions: 
+                if sub_node.value.member in self.__source_functions: 
                     self.__tainted_variables.append((f"{current_class}.{method_name}", sub_node.expressionl.member , count))
+                    self.source_check.append((sub_node.expressionl.member,sub_node.value.member,sub_node.value.qualifier))
 
 
     def __append_flow(self):

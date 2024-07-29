@@ -1,0 +1,5 @@
+CompilationUnit
+│   PackageDeclaration(name=christmas)
+└── ClassDeclaration(name=Application, modifiers={'public'})
+└── ├── MethodDeclaration(name=main, modifiers={'public', 'static'})
+└── ├── │   StatementExpression(expression=ClassCreator(arguments=[], body=None, constructor_type_arguments=None, postfix_operators=[], prefix_operators=[], qualifier=None, selectors=[], type=ReferenceType(arguments=None, dimensions=None, name=EventControl, sub_type=None)), label=None)
