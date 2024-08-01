@@ -2,9 +2,11 @@ import javalang
 import os
 from collections import defaultdict
 
+
 class taintAnalysis:
     __methods = defaultdict(list)
     __source_functions = ['Console.readLine']
+    __sink_functions = ['println']
     __tainted_variables = []
     __flow = []
     flows = defaultdict(list)
@@ -76,12 +78,12 @@ class taintAnalysis:
             self.__flow.clear()
             self.__track_variable_flow(class_method, var, count)
             
-            # 새로운 키를 생성하고, 기존 키가 존재하면 새 키를 사용
-            existing_key = (class_method, var)
-            new_key = self.__numbering(self.flows, existing_key)
+            # # 새로운 키를 생성하고, 기존 키가 존재하면 새 키를 사용
+            # existing_key = (class_method, var)
+            # new_key = self.__numbering(self.flows, existing_key)
 
-            # 만약 이미 해당 키가 있다면 기존 값에 flow를 추가
-            self.flows[new_key].extend(self.__flow)
+            # # 만약 이미 해당 키가 있다면 기존 값에 flow를 추가
+            # self.flows[new_key].extend(self.__flow)
 
 
     def __numbering(self, d, key_tuple):
@@ -107,7 +109,11 @@ class taintAnalysis:
             for path, node in method_node: #노드 내부 탐색
                 current_count +=1
 
-                #변수 할당일 때
+                # sink 탐색
+                if isinstance(node, javalang.tree.MethodInvocation):
+                    self.__if_find_sink(node, class_method, var_name, count, current_count)
+
+                # 변수 할당일 때
                 if isinstance(node, javalang.tree.Assignment): 
                     self.__if_variable_assignment(node, class_method, var_name, count, current_count)
 
@@ -122,6 +128,34 @@ class taintAnalysis:
                 # for 문일 때
                 elif isinstance(node, javalang.tree.ForStatement): 
                     self.__if_for_statement(node, class_method, var_name, count, current_count)
+
+        if self.__flow:
+            self.__flow.pop()
+
+    
+    def __if_find_sink(self, node, class_method, var_name, count, current_count):
+        if count>current_count:
+                return
+        
+        if node.member in self.__sink_functions and node.arguments:
+            flow_added = False
+            for arg in node.arguments:
+                if isinstance(arg, javalang.tree.BinaryOperation):
+                    if isinstance(arg.operandl, javalang.tree.MemberReference) or \
+                       isinstance(arg.operandr, javalang.tree.MemberReference):
+                        flow_added = True
+                        break  # 하나의 인자만 확인하면 충분
+
+            if flow_added:
+                self.__flow.append([f"{node.member}------>"])
+                # 새로운 키를 생성하고, 기존 키가 존재하면 새 키를 사용
+                existing_key = (class_method, var_name)
+                new_key = self.__numbering(self.flows, existing_key)
+                if new_key not in self.flows:
+                    self.flows[new_key] = []
+                # flows에 __flow 복사
+                self.flows[new_key].append(self.__flow[:])
+                self.__flow.pop()            
 
 
     def __if_variable_assignment(self, node, class_method, var_name, count, current_count):
