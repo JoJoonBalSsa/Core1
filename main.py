@@ -8,7 +8,11 @@ def create_result(flows):
             file.write(f"{class_method}, {var}\n")
             file.write("흐름 파악\n")
             for f in value:
-                file.write(f"{f}\n")
+                    if isinstance(f[0], list):
+                        for sub_f in f:
+                            file.write(f"{sub_f}\n")
+                    else:
+                        file.write(f"{f}\n")
             file.write("\n")
     
 
@@ -18,8 +22,12 @@ def print_result(flows,source):
         print("Tainted Variable: ")
         print(f"{class_method}, {var}")
         print("흐름 파악")
-        for f in flows[class_method, var]:
-            print(f)
+        for f in value:
+                if isinstance(f[0], list):  # 이중 리스트인 경우
+                    for sub_f in f:
+                        print(sub_f)
+                else:
+                    print(f)
         print()
 
     for i,j,k in source:
