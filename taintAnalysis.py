@@ -232,7 +232,7 @@ class taintAnalysis:
                         break
                 # 인자가 피연산자 중 하나일 때
                 else:
-                    flow_added = self.__judge_binaryoperation(arg, flow_added, var_name)
+                    flow_added = self.__judge_binary_operation(arg, flow_added, var_name)
                     if flow_added == True:
                        break
 
@@ -259,7 +259,7 @@ class taintAnalysis:
                     flow_added = True
                     return  flow_added# 하나의 인자만 확인하면 충분
             elif isinstance(arg.operandl, javalang.tree.BinaryOperation):
-                flow_added = self.__judge_binaryoperation(arg.operandl, flow_added, var_name)
+                flow_added = self.__judge_binary_operation(arg.operandl, flow_added, var_name)
                 return flow_added
 
 
