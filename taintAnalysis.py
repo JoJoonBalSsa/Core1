@@ -1,6 +1,8 @@
 import javalang
 import os
 from collections import defaultdict
+from analysisResultManager import analysisResultManager
+from methodPositionLocator import methodPositionLocator
 
 class taintAnalysis:
     __methods = defaultdict(list)
@@ -85,11 +87,18 @@ class taintAnalysis:
     __flow = []
     flows = defaultdict(list)
     source_check = []
+    
 
     #메서드 단위로 AST 노드 저장, Taint 변수 탐색 및 저장
-    def __init__(self, java_folder_path): 
+    def __init__(self, java_folder_path, analysis_result_manager):
+        self.java_folder_path = java_folder_path
+        self.analysis_result_manager = analysis_result_manager
+        self.current_path = None
+        self.current_source_code = None
+        self.json_path = "resultData.json"
+
         # Step 1: Parse all Java files
-        trees = self.__parse_java_files(java_folder_path)
+        trees = self.__parse_java_files()
 
         # Step 2: Extract methods and find tainted variables
         self.__taint_analysis(trees)
@@ -98,16 +107,16 @@ class taintAnalysis:
         self.__append_flow()
 
 
-    def __parse_java_files(self, folder_path):
+    def __parse_java_files(self):
         """ Parse all Java files in the given folder and return a list of parsed ASTs. """
         trees = []
-        for root, _, files in os.walk(folder_path):
+        for root, _, files in os.walk(self.java_folder_path):
             for file_name in files:
                 if file_name.endswith('.java'):
                     file_path = os.path.join(root, file_name)
-                    with open(file_path, 'r', encoding='utf-8') as file:
-                        source_code = file.read()
-                    tree = javalang.parse.parse(source_code)
+                    with open(self.current_path, 'r', encoding='utf-8') as file:
+                        self.current_source_code = file.read()
+                    tree = javalang.parse.parse(self.current_source_code)
                     trees.append((file_path, tree))
         return trees
 
@@ -124,9 +133,6 @@ class taintAnalysis:
                 
                 elif isinstance(node, javalang.tree.ConstructorDeclaration):
                     self.__extract_methods(node, current_class, file_path)
-
-
-
 
 
     def __extract_methods(self, node, current_class, file_path):
@@ -181,9 +187,33 @@ class taintAnalysis:
             return new_key
         else:
             return key_tuple
-    
+        
+
+    def __analyze_method(self, tree, method_node, class_method):
+        tree_position = methodPositionLocator.visit_FunctionDef(method_node)
+        cut_tree = self.__get_cut_tree(tree, method_node)
+        sensitivity = self.__calculate_sensitivity(method_node)
+        source_code = self.__extract_method_source_code(method_node)
+        self.analysis_result_manager.update_method_info(self.current_path, class_method, tree_position, cut_tree, sensitivity, source_code)
+
+    def __get_cut_tree(self, tree, method_node):
+        # ... 메서드의 AST를 자른 값을 반환하는 로직 ...
+        for path, node in tree:
+            if isinstance(node, javalang.tree.MethodDeclaration) and node == method_node:
+                return node
+
+    def __calculate_sensitivity(self, method_node):
+        # ... 메서드의 민감도를 계산하는 로직 ...
+        return 0
+
+    def __extract_method_source_code(self, method_node):
+        start_position = method_node.position
+        end_position = self.find_method_end_position(method_node)
+        method_lines = self.current_source_code.splitlines()[start_position.line - 1:end_position.line]
+        return '\n'.join(method_lines)
+
  
-    def __track_variable_flow(self, class_method, var_name, count=0): #변수 흐름 추적. (계속 추가 가능)
+    def __track_variable_flow(self, tree, class_method, var_name, count=0): #변수 흐름 추적. (계속 추가 가능)
         class_name, method_name = class_method.split('.')
         self.__flow.append([class_method,var_name]) # 흐름 추가
         method_nodes = self.__methods.get((class_name, method_name), []) #메서드 단위로 저장해둔 노드로 바로바로 접근가능
@@ -196,6 +226,7 @@ class taintAnalysis:
                 # sink 탐색
                 if isinstance(node, javalang.tree.MethodInvocation):
                     self.__if_find_sink(node, class_method, var_name, count, current_count)
+                    print(node)
 
                 #변수 할당일 때
                 if isinstance(node, javalang.tree.Assignment): 

@@ -1,4 +1,5 @@
 from taintAnalysis import taintAnalysis
+from analysisResultManager import analysisResultManager
 
 
 def create_result(flows):
@@ -35,9 +36,9 @@ def print_result(flows,source):
         print()
 
 
-
 def main(java_folder_path, output_folder):
-    tainted = taintAnalysis(java_folder_path)
+    result = analysisResultManager(".")
+    tainted = taintAnalysis(java_folder_path, result)
     print_result(tainted.flows,tainted.source_check)
     create_result(tainted.flows)
    
