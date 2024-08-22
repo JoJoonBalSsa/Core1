@@ -6,83 +6,288 @@ from methodPositionLocator import methodPositionLocator
 
 class taintAnalysis:
     __methods = defaultdict(list)
-    __source_functions = [
+    __source_functions = {
         # 사용자 입력
-        'next',
-        'nextLine',
-        'nextInt',
-        'nextDouble',
-        'readLine',
-
+        'next': 1,
+        'nextLine': 1,
+        'nextInt': 1,
+        'nextDouble': 1,
+        'readLine': 1,
+        'nextBoolean': 1,
+        'nextFloat': 1,
+        'nextLong': 1,
+        'nextByte': 1,
+        'nextShort': 1,
 
         # 네트워크 입력
-        'getInputStream',
-        'getParameter',
-        'getParameterMap',
-        'getHeader',
-        'getCookies',
+        'getInputStream': 1.5,
+        'getParameter': 1,
+        'getParameterMap': 1.5,
+        'getHeader': 1,
+        'getCookies': 1,
+        'getQueryString': 1,
+        'getRemoteAddr': 1,
+        'getRemoteHost': 1,
+        'getRequestURI': 1,
+        'getRequestURL': 1,
+        'getMethod': 0.5,
+        'getContentType': 0.5,
+        'getContextPath': 0.5,
+        'getServerName': 0.5,
 
         # 환경 변수
-        'getenv',
-        'getProperty',
+        'getProperty': 1.5,
+        'getenv': 1.5,
+        'getProperties': 1,
+        'getSecurityManager': 1,
 
         # 데이터베이스 입력
-        'getString',
-        'getInt',
-        'getDouble',
+        'getString': 1.5,
+        'getInt': 1.5,
+        'getDouble': 1.5,
+        'executeQuery': 1.5,
+        'queryForObject': 1.5,
+        'queryForList': 1.5,
+        'getBlob': 1.5,
+        'getClob': 1.5,
+        'getDate': 1.5,
+        'getTime': 1.5,
+        'getTimestamp': 1.5,
+        'getBoolean': 1.5,
+        'getByte': 1.5,
+        'getShort': 1.5,
+        'getLong': 1.5,
+        'getFloat': 1.5,
 
         # API 및 라이브러리 호출
-        'getData', # 예시: 외부 API 호출 반환값
+        'getData': 1,
+        'sendRequest': 1,
+        'getApiResponse': 1,
+        'executeMethod': 1,
+        'invokeMethod': 1,
+        'callService': 1,
 
         # 세션 데이터
-        'getAttribute'
-    ]
-    __sink_functions = [
+        'getAttribute': 1.5,
+        'getCreationTime': 1,
+        'getLastAccessedTime': 1,
+        'getMaxInactiveInterval': 1,
+        'isNew': 1,
+        'getId': 1,
+
+        # 파일 입력
+        'readAllBytes': 1,
+        'readObject': 1,
+        'read': 1,
+        'readLine': 1,
+        'readAllLines': 1,
+        'readString': 1,
+        'readFully': 1,
+        'readUTF': 1,
+
+        # XML 처리
+        'parse': 0.5,
+        'getElementsByTagName': 0.5,
+        'getChildNodes': 0.5,
+        'getNodeValue': 0.5,
+        'getAttributes': 0.5,
+
+        # JSON 처리
+        'getJSONObject': 1,
+        'getJSONArray': 1,
+        'getString': 1,
+        'getInt': 1,
+        'getBoolean': 1,
+
+        # 시스템 및 런타임
+        'getRuntime': 0.5,
+        'getProcessors': 0.5,
+        'getFreeMemory': 0.5,
+        'getTotalMemory': 0.5,
+        'getMaxMemory': 0.5,
+
+        # 리플렉션
+        'getMethod': 0.5,
+        'getField': 0.5,
+        'getConstructor': 0.5,
+        'getAnnotation': 0.5,
+
+        # 로깅
+        'getLogger': 0.5,
+        'getLevel': 0.5,
+        'getName': 0.5,
+
+        # 기타 소스
+        'getResourceBundle': 0.5,
+        'getRequestParameter': 0.5,
+        'getResource': 0.5,
+        'getResourceAsStream': 0.5,
+        'getClassLoader': 0.5,
+        'getSystemClassLoader': 0.5,
+        'getParent': 0.5,
+        'getPackage': 0.5,
+        'getImplementationVersion': 0.5,
+
+        # 파일 시스템 작업
+        'listFiles': 0.5,
+        'getAbsolutePath': 0.5,
+        'getCanonicalPath': 0.5,
+        'getParentFile': 0.5,
+        'isDirectory': 0.5,
+        'isFile': 0.5,
+        'exists': 0.5,
+        'lastModified': 0.5,
+        'length': 0.5,
+
+        # NIO 작업
+        'readAttributes': 0.5,
+        'newDirectoryStream': 0.5,
+        'newBufferedReader': 0.5,
+        'newBufferedWriter': 0.5,
+        'readSymbolicLink': 0.5,
+        'getFileStore': 0.5,
+
+        # 네트워크 및 URL
+        'openConnection': 1,
+        'getResponseCode': 1,
+        'getContentLength': 1,
+        'getHeaderFields': 1,
+        'getProtocol': 0.5,
+        'getHost': 0.5,
+        'getPort': 0.5,
+        'getPath': 0.5,
+
+        # 암호화 및 보안
+        'getEncoded': 1.5,
+        'getAlgorithm': 1.5,
+        'getPublic': 1.5,
+        'getPrivate': 1.5,
+        'getModulus': 1.5,
+        'getExponent': 1.5,
+
+        # 날짜 및 시간
+        'getYear': 0.5,
+        'getMonth': 0.5,
+        'getDayOfMonth': 0.5,
+        'getHour': 0.5,
+        'getMinute': 0.5,
+        'getSecond': 0.5,
+        'getZone': 0.5,
+        'toEpochMilli': 0.5,
+
+        # JDBC 확장
+        'getMetaData': 1,
+        'getColumnCount': 1,
+        'getColumnName': 1,
+        'getColumnType': 1,
+        'getFetchSize': 1,
+        'getWarnings': 1,
+
+        # Java Beans
+        'getPropertyDescriptors': 0.5,
+        'getReadMethod': 0.5,
+        'getWriteMethod': 0.5,
+        'getPropertyType': 0.5,
+
+        # 국제화
+        'getLocale': 0.5,
+        'getCountry': 0.5,
+        'getLanguage': 0.5,
+        'getDisplayName': 0.5,
+        'getAvailableLocales': 0.5,
+
+        # 자바 관리 확장 (JMX)
+        'getMBeanInfo': 1,
+        'getAttributes': 1,
+        'getOperations': 1,
+        'getNotifications': 1,
+
+        # JNDI
+        'getNameInNamespace': 0.5,
+        'getNameParser': 0.5,
+        'getInitialContext': 0.5,
+
+        # AWT 및 Swing
+        'getGraphics': 0.5,
+        'getFontMetrics': 0.5,
+        'getPreferredSize': 0.5,
+        'getBackground': 0.5,
+        'getForeground': 0.5,
+
+        # RMI
+        'getRegistry': 1,
+        'lookup': 1,
+        'getClientHost': 1,
+
+        # 애노테이션 처리
+        'getAnnotationsByType': 0.5,
+        'getDeclaredAnnotations': 0.5,
+        'getAnnotationMirrors': 0.5,
+
+        # JAX-WS 및 웹 서비스
+        'getPort': 1,
+        'getPortName': 1,
+        'getServiceName': 1,
+        'getWsdlLocation': 1,
+
+        # JPA
+        'getPersistenceContext': 1,
+        'getFlushMode': 1,
+        'getLockMode': 1,
+        'getReference': 1,
+
+        # Java 가상 머신
+        'getThreadInfo': 1,
+        'getHeapMemoryUsage': 1,
+        'getNonHeapMemoryUsage': 1,
+        'getThreadCpuTime': 1,
+    }
+
+    __sink_functions = {
         # 콘솔 출력
-        'print',
-        'println',
-        'printf',
-        'write',
+        'print': 0.5,
+        'println': 0.5,
+        'printf': 0.5,
+        'write': 0.5,
 
         # 파일 출력
-        'FileOutputStream',
-        'FileWriter',
-        'BufferedWriter',
-        'PrintWriter',
-        'OutputStreamWriter',
-        'DataOutputStream',
-        'writeBytes',
-        'writeChars',
-        'writeUTF',
+        'FileOutputStream': 1,
+        'FileWriter': 1,
+        'BufferedWriter': 1,
+        'PrintWriter': 1,
+        'OutputStreamWriter': 1,
+        'DataOutputStream': 1,
+        'writeBytes': 1,
+        'writeChars': 1,
+        'writeUTF': 1,
 
         # 네트워크 출력
-        'getOutputStream',
-        'write',
+        'getOutputStream': 1.5,
+        'write': 1.5,
 
         # 데이터베이스 업데이트
-        'executeUpdate',
-        'execute',
+        'executeUpdate': 1.5,
+        'execute': 1.5,
 
         # 로그 출력
-        'log',
-        'info',
-        'warn',
-        'error',
+        'log': 0.5,
+        'info': 0.5,
+        'warn': 0.5,
+        'error': 0.5,
 
         # API 응답
-        'getWriter',
-        'getOutputStream',
-        'write',
-        'sendRedirect',
-        'addHeader',
-        'setHeader',
-        'setStatus',
-        'setContentType',
+        'getWriter': 1.5,
+        'getOutputStream': 1.5,
+        'write': 1.5,
+        'sendRedirect': 1,
+        'addHeader': 1,
+        'setHeader': 1,
+        'setStatus': 1,
+        'setContentType': 1,
 
         # GUI 출력
-        'setText',
-        'append'
-    ]
+        'setText': 0.5
+    }   
     __tainted_variables = []
     __flow = []
     flows = defaultdict(list)
@@ -105,6 +310,43 @@ class taintAnalysis:
 
         # Step 3: Append flow
         self.__append_flow()
+
+    
+    def _priority_flow(self):
+        prioritized_flows = []
+        
+        for (class_method, var), value in self.flows.items():
+            for flow in self.flows[(class_method, var)]:
+                # 흐름에서 첫 번째 항목 (source)와 마지막 항목 (sink)을 가져옴
+                source_full = flow[0][0] 
+                sink_full = flow[-1][0]  
+
+                # 'a.b.c'에서 'c' 부분 추출
+                source = source_full.split('.')[-1]
+                sink = sink_full.split('.')[-1]
+
+                # source와 sink의 민감도 값을 가져옴
+                source_sensitivity = self.__source_functions.get(source, 0)  
+                sink_sensitivity = self.__sink_functions.get(sink, 0)       
+
+                total_sensitivity = source_sensitivity + sink_sensitivity
+
+                # 민감도를 0.5 단위로 반올림하여 1, 2, 3 중 하나로 설정
+                rounded_sensitivity = round(total_sensitivity / 1.5) * 1.5
+
+                # 민감도를 흐름 앞에 삽입
+                prioritized_flow = [int(round(rounded_sensitivity))] + flow
+                prioritized_flows.append(prioritized_flow)
+
+        # 우선순위에 따라 flows를 정렬
+        prioritized_flows.sort(reverse=True, key=lambda x: x[0])
+        '''
+        # 최종 결과 출력 (필요에 따라 반환하거나 다른 용도로 사용)
+        for flow in prioritized_flows:
+            print(flow)
+        '''
+        return prioritized_flows
+
 
 
     def __parse_java_files(self):
@@ -150,7 +392,7 @@ class taintAnalysis:
         if isinstance(sub_node, javalang.tree.VariableDeclarator): 
             if isinstance(sub_node.initializer, javalang.tree.MethodInvocation):
                 if sub_node.initializer.member in self.__source_functions:  
-                    self.__tainted_variables.append((f"{current_class}.{method_name}", sub_node.name , count))
+                    self.__tainted_variables.append((f"{current_class}.{method_name}.{sub_node.initializer.member}", sub_node.name , count))
                     self.source_check.append((sub_node.name,sub_node.initializer.member,sub_node.initializer.qualifier))
                 
             elif isinstance(sub_node.initializer, javalang.tree.ClassCreator):
@@ -159,15 +401,27 @@ class taintAnalysis:
                         for inner_arg in arg.arguments:
                             if isinstance(inner_arg, javalang.tree.MethodInvocation):
                                 if inner_arg.member in self.__source_functions:
-                                    self.__tainted_variables.append((f"{current_class}.{method_name}", sub_node.name, count))
+                                    self.__tainted_variables.append((f"{current_class}.{method_name}.{inner_arg.member}", sub_node.name, count))
                                     self.source_check.append((sub_node.name, inner_arg.member, inner_arg.qualifier))
 
         #변수 할당일 때
         elif isinstance(sub_node, javalang.tree.Assignment): 
             if isinstance(sub_node.value, javalang.tree.MethodInvocation):
                 if sub_node.value.member in self.__source_functions: 
-                    self.__tainted_variables.append((f"{current_class}.{method_name}", sub_node.expressionl.member , count))
+                    self.__tainted_variables.append((f"{current_class}.{method_name}.{sub_node.value.member}", sub_node.expressionl.member , count))
                     self.source_check.append((sub_node.expressionl.member,sub_node.value.member,sub_node.value.qualifier))
+        
+        #TRY문 
+        elif isinstance(sub_node, javalang.tree.TryResource):
+            if isinstance(sub_node.value, javalang.tree.ClassCreator):
+                for arg in sub_node.value.arguments:
+                    if isinstance(arg, javalang.tree.ClassCreator):
+                        for inner_arg in arg.arguments:
+                            if isinstance(inner_arg, javalang.tree.MethodInvocation):
+                                if inner_arg.member in self.__source_functions:
+                                    self.__tainted_variables.append((f"{current_class}.{method_name}.{inner_arg.member}", sub_node.name, count))
+        
+
 
 
     def __append_flow(self):
@@ -189,33 +443,29 @@ class taintAnalysis:
             return key_tuple
         
 
-    def __analyze_method(self, tree, method_node, class_method):
-        tree_position = methodPositionLocator.visit_FunctionDef(method_node)
-        cut_tree = self.__get_cut_tree(tree, method_node)
-        sensitivity = self.__calculate_sensitivity(method_node)
-        source_code = self.__extract_method_source_code(method_node)
-        self.analysis_result_manager.update_method_info(self.current_path, class_method, tree_position, cut_tree, sensitivity, source_code)
-
-    def __get_cut_tree(self, tree, method_node):
+    def _get_cut_tree(self, method_name):
         # ... 메서드의 AST를 자른 값을 반환하는 로직 ...
-        for path, node in tree:
-            if isinstance(node, javalang.tree.MethodDeclaration) and node == method_node:
-                return node
+        for path, node in self.__methods:
+            if isinstance(node, javalang.tree.MethodDeclaration) and node == method_name:
+                 return node
+            
 
-    def __calculate_sensitivity(self, method_node):
-        # ... 메서드의 민감도를 계산하는 로직 ...
-        return 0
+    def _extract_method_source_code(self, method_name):
+        position = methodPositionLocator.find_method_position(self.current_source_code, method_name)
+        if position["start_line"] is None or position["end_line"] is None:
+            return None  # 메소드를 찾지 못한 경우
+        
+        lines = self.current_source_code.split('\n')
 
-    def __extract_method_source_code(self, method_node):
-        start_position = method_node.position
-        end_position = self.find_method_end_position(method_node)
-        method_lines = self.current_source_code.splitlines()[start_position.line - 1:end_position.line]
-        return '\n'.join(method_lines)
+        # 메소드 코드 추출 (인덱스는 0부터 시작하므로 1을 뺀다, 1을 더하는 것은 마지막 }을 포함시키기 위함)
+        extracted_code = '\n'.join(lines[position["start_line"]-1:position["end_line"]+1])
 
- 
+        return extracted_code
+
+
     def __track_variable_flow(self, tree, class_method, var_name, count=0): #변수 흐름 추적. (계속 추가 가능)
         class_name, method_name = class_method.split('.')
-        self.__flow.append([class_method,var_name]) # 흐름 추가
+        self.__flow.append(class_method) # 흐름 추가
         method_nodes = self.__methods.get((class_name, method_name), []) #메서드 단위로 저장해둔 노드로 바로바로 접근가능
         
         current_count=0
@@ -249,6 +499,10 @@ class taintAnalysis:
             
         
     def __if_find_sink(self, node, class_method, var_name, count, current_count):
+        parts = class_method.split('.')
+        class_name = parts[0]  
+        method_name = parts[1] 
+        
         if count>current_count:
                 return
         
@@ -268,7 +522,7 @@ class taintAnalysis:
                        break
 
             if flow_added:
-                self.__flow.append([f"{node.member}------>"])
+                self.__flow.append(f"{method_name}.{node.member}")
                 # 새로운 키를 생성하고, 기존 키가 존재하면 새 키를 사용
                 existing_key = (class_method, var_name)
                 new_key = self.__numbering(self.flows, existing_key)
@@ -299,11 +553,11 @@ class taintAnalysis:
             if node.value.arguments:
                 for arg_index, arg in enumerate(node.value.arguments):
                     if isinstance(arg, javalang.tree.MemberReference) and arg.member == var_name and (count<current_count):      
-                        self.__flow.append([node.value.member,var_name])
+                        #self.__flow.append([node.value.member,var_name])
                         self.__track_variable_flow(class_method,node.expressionl.member,current_count) # 같은 메서드에서 추적
 
         if isinstance(node.value, javalang.tree.MethodInvocation) and (node.value.qualifier == var_name) and (count<current_count):
-            self.__flow.append([node.value.member,var_name])
+            #self.__flow.append([node.value.member,var_name])
             self.__track_variable_flow(class_method,node.expressionl.member,current_count) # 같은 메서드에서 추적
 
         if isinstance(node.expressionl, javalang.tree.MemberReference) and node.value.member == var_name and (count<current_count) : # 1-1
@@ -326,7 +580,7 @@ class taintAnalysis:
 
             if isinstance(var_decl.initializer, javalang.tree.MethodInvocation):
                 if (var_decl.initializer.qualifier == var_name) and (count<current_count) : # 2-1
-                    self.__flow.append([var_decl.initializer.member,var_name])
+                    #self.__flow.append([var_decl.initializer.member,var_name])
                     self.__track_variable_flow(class_method,var_decl.name,current_count) # 같은 메서드에서 추적
 
             if isinstance(var_decl.initializer, javalang.tree.MemberReference) and var_decl.initializer.member == var_name and (count<current_count) :  # 1-1
