@@ -2,7 +2,6 @@ import javalang
 import os
 from collections import defaultdict
 import logging
-from MethodPositionLocator import MethodPositionLocator
 
 
 class taintAnalysis:
@@ -297,6 +296,9 @@ class taintAnalysis:
     __tainted_variables = []
     __flow = []
     _get_position=""
+    _current_node=None
+    _file_path=""
+    source_codes = {} 
     _t_tree=defaultdict(list)
     flows = defaultdict(list)
     method_check = []
@@ -358,7 +360,7 @@ class taintAnalysis:
         logging.basicConfig(level=logging.INFO)
         logger = logging.getLogger(__name__)
 
-        """ Parse all Java files in the given folder and return a list of parsed ASTs. """
+        """ Parse all Java files in the given folder and return a dictionary of file paths to source codes and ASTs. """
         trees = []
         error_files = []
         success_files = []
@@ -374,6 +376,7 @@ class taintAnalysis:
                             source_code = file.read()
                         tree = javalang.parse.parse(source_code)
                         trees.append((file_path, tree))
+                        self.source_codes[file_path] = source_code  # 파일 경로와 소스 코드를 딕셔너리에 저장
                         success_files.append(file_path)
                         logger.info(f"파싱 성공: {file_path}")
                     except Exception as e:
@@ -388,9 +391,7 @@ class taintAnalysis:
             for file_path, error in error_files:
                 logger.error(f"  - {file_path}: {error}")
 
-        return trees
-
-
+        return trees  # 소스 코드와 AST를 함께 반환
 
 
     def __taint_analysis(self, trees):
@@ -475,49 +476,111 @@ class taintAnalysis:
             return key_tuple
     
 
-
-
-
-    def _get_cut_tree(self, method_name):
-        # ... 메서드의 AST를 자른 값을 반환하는 로직 ...
-        for path, node in self.__methods:
-            if isinstance(node, javalang.tree.MethodDeclaration) and node == method_name:
-                return node
-
-
-    def _get_file_path(self, method_name):       
-        for method_nodes in self.__methods.items():
-            for path, node in method_nodes:
-            # node가 MethodDeclaration 인스턴스인지 확인하고, 해당 메서드의 이름과 비교
-                if isinstance(node, javalang.tree.MethodDeclaration) and node.name == method_name:
-                    return path  # 메서드가 정의된 파일 경로를 반환
-
-
-
-    def find_method_end_position(self, method_node):
-            """
-            함수의 끝 위치를 찾습니다. 함수의 본문에서 마지막 노드의 위치를 반환합니다.
-            """
-            last_node = method_node.body[-1]
-            while hasattr(last_node, 'body') and last_node.body:
-                last_node = last_node.body[-1]
-            return last_node.lineno
-
-
-    def _extract_method_source_code(self, method_name):
+    def get_end_line(self,node):
         """
-        주어진 함수 이름에 해당하는 소스 코드를 반환합니다.
+        재귀적으로 노드의 마지막 줄을 찾는 함수.
         """
-        method_node = self._get_cut_tree(method_name)
-        if method_node is None:
-            return None
+        end_line = node.position.line
+        
+        # 자식 노드가 있는 경우, 자식 노드들의 마지막 줄을 확인합니다.
+        if hasattr(node, 'body') and node.body:
+            for child_node in node.body:
+                if hasattr(child_node, 'position'):
+                    # 자식 노드의 위치를 사용하여 끝 줄을 업데이트합니다.
+                    end_line = max(end_line, self.get_end_line(child_node))
+        
+        return end_line
 
-        start_position = method_node.lineno
-        end_position = self.find_method_end_position(method_node)
-        method_lines = self.current_source_code.splitlines()[start_position - 1:end_position]
-        self._get_position=f"{start_position}-{end_position}"
-        return '\n'.join(method_lines)
 
+
+    def _get_cut_tree(self, m_name):
+        global _current_node
+
+        for (class_name, method_name), method_nodes in self.__methods.items():
+            if method_name == m_name:
+                for file_path, method_node in method_nodes:
+                    for path, node in method_node:
+                        if isinstance(node, javalang.tree.MethodDeclaration) and node.name == method_name:
+                            _current_node = node
+                            self._file_path=file_path
+
+                            # 시작 줄
+                            start_line = node.position.line
+                            
+                            # 끝 줄을 재귀적으로 계산합니다.
+                            end_line = self.get_end_line(node)
+
+                            # Store start and end positions in a single variable
+                            self._get_position=f"{start_line}-{end_line}"
+                            print(self._get_position)
+                            # Return or use node_positions as needed
+                            return self._method_declaration_to_string(node),
+
+
+
+
+
+    def _method_declaration_to_string(self, method_node):
+        """
+        MethodDeclaration 객체를 전체적으로 문자열로 변환합니다.
+        """
+        # 메소드 이름과 매개변수를 포함한 서명
+        params = ', '.join([f"{param.type.name} {param.name}" for param in method_node.parameters])
+        method_signature = f"Method: {method_node.name}({params})"
+        
+        # 메소드의 본문을 문자열로 변환
+        method_body = self._node_to_string(method_node.body)
+        
+        return f"{method_signature}\nBody:\n{method_body}"
+
+
+
+    def _node_to_string(self, nodes):
+        """
+        노드의 리스트를 재귀적으로 문자열로 변환합니다.
+        """
+        if nodes is None:
+            return "None"
+
+        result = []
+        for node in nodes:
+            if isinstance(node, javalang.tree.Statement):
+                result.append(str(node))
+            elif isinstance(node, javalang.tree.BlockStatement):
+                result.append(self._node_to_string(node.statements))
+            else:
+                result.append(str(node))
+        
+        return '\n'.join(result)
+
+
+
+
+    def _extract_method_source_code(self):
+        start_line_str, end_line_str = self._get_position.split('-')
+        
+        
+        # 파일 경로에 해당하는 소스 코드를 가져옵니다.
+        if self._file_path not in self.source_codes:
+            raise ValueError(f"파일 경로 '{self._file_path}'가 source_codes에 존재하지 않습니다.")
+        
+        source_code = self.source_codes[self._file_path]
+        
+        # 시작 줄과 끝 줄을 분리하여 정수로 변환합니다.
+        start_line_str, end_line_str = self._get_position.split('-')
+        start_line = int(start_line_str)
+        end_line = int(end_line_str)
+        
+        # 소스 코드에서 해당 범위를 추출합니다.
+        lines = source_code.splitlines()
+        
+        # 시작 줄과 끝 줄을 기준으로 코드 추출
+        if start_line < 1 or end_line > len(lines):
+            raise ValueError(f"잘못된 줄 번호 범위: 시작 줄 {start_line}, 끝 줄 {end_line}")
+        
+        extracted_lines = lines[start_line - 1:end_line]
+        
+        return '\n'.join(extracted_lines)
 
 
 
@@ -525,11 +588,14 @@ class taintAnalysis:
     def __track_variable_flow(self, class_method, var_name, count=0): #변수 흐름 추적. (계속 추가 가능)
         parts = class_method.split('.')
 
-        class_name = parts[0]  
+        class_name = parts[0] 
+
+        if parts[1] is None:
+            parts[1] = " "
+
         method_name = parts[1]  
         self.__flow.append(class_method) # 흐름 추가
         method_nodes = self.__methods.get((class_name, method_name), []) #메서드 단위로 저장해둔 노드로 바로바로 접근가능
-        
         
 
         current_count=0
@@ -585,7 +651,7 @@ class taintAnalysis:
                        break
 
             if flow_added:
-                self.__flow.append(f"{method_name}.{node.member}")
+                self.__flow.append(f".{method_name}.{node.member}")
                 self.sink_check.append(node.member)
                 # 새로운 키를 생성하고, 기존 키가 존재하면 새 키를 사용
                 existing_key = (class_method, var_name)
