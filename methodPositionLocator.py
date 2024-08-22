@@ -1,31 +1,28 @@
-import ast
+import javalang
 
-class methodPositionLocator(ast.NodeVisitor):
+class MethodPositionLocator:
     def __init__(self, method_name):
         self.method_name = method_name
-        self.start_lineno = None
-        self.end_lineno = None
+        self.start_position = None
+        self.end_position = None
 
-    def visit_FunctionDef(self, node):
-        if node.name == self.method_name:
-            # 메소드의 시작 위치 (FunctionDef 노드의 시작 위치)
-            self.start_lineno = node.lineno
+    def visit(self, tree):
+        for path, node in tree.filter(javalang.tree.MethodDeclaration):
+            if node.name == self.method_name:
+                self.start_position = node.position
+                # 메소드의 끝 위치를 찾기 위해 바디의 마지막 위치를 사용
+                self.end_position = node.body[-1].position if node.body else node.position
+                break
 
-            # 메소드의 끝 위치 (마지막 본문 노드의 끝 위치)
-            last_node = node.body[-1]
-            while hasattr(last_node, 'body'):
-                last_node = last_node.body[-1]
-            
-            self.end_lineno = last_node.end_lineno
-
-        # 자식 노드 방문을 계속
-        self.generic_visit(node)
-
-def find_method_position(source_code, method_name):
-    tree = ast.parse(source_code)
-    locator = methodPositionLocator(method_name)
-    locator.visit(tree)
-    return {
-        "start_line": locator.start_lineno,
-        "end_line": locator.end_lineno
-    }
+    def find_method_position(source_code, method_name):
+        try:
+            tree = javalang.parse.parse(source_code)
+            locator = MethodPositionLocator(method_name)
+            locator.visit(tree)
+            return {
+                "start_line": locator.start_position.line if locator.start_position else None,
+                "end_line": locator.end_position.line if locator.end_position else None
+            }
+        except javalang.parser.JavaSyntaxError as e:
+            print(f"Java 구문 오류: {e}")
+            return None
