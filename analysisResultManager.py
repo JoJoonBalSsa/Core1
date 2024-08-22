@@ -1,28 +1,13 @@
 import json
 import os
-import MethodPositionLocator
 
 class analysisResultManager:
     def __init__(self, json_file_path):
         self.json_file_path = json_file_path
-        self.data = self.load_json()
-
-    def load_json(self):
-        if os.path.exists(self.json_file_path):
-            with open(self.json_file_path, 'r') as f:
-                return json.load(f)
-        else:
-            print(f"{self.json_file_path} 파일이 존재하지 않아 새로 생성합니다!")
-            with open(self.json_file_path, 'w') as f:
-                json.dump([], f, indent=4)  # 빈 리스트로 초기화
-        return []
-
-    def save_json(self):
-        with open(self.json_file_path, 'w') as f:
-            json.dump(self.data, f, indent=2)
+        self.results = []
 
     def append(self, sensitivity, file_path, method_name, tree_position, cut_tree, source_code):
-        flow_data = {
+        new_entry = {
             "sensitivity": sensitivity,
             "file_path": file_path,
             "method_name": method_name,
@@ -30,5 +15,25 @@ class analysisResultManager:
             "cut_tree": cut_tree,
             "source_code": source_code
         }
-        self.data.append(flow_data)  # 데이터를 리스트에 추가
-        self.save_json()  # 파일에 저장
+
+        # 기존 항목 중 file_path와 tree_position이 같은 항목 찾기
+        existing_entry = next((item for item in self.results 
+                               if item["file_path"] == file_path and item["tree_position"] == tree_position), None)
+
+        if existing_entry:
+            # 기존 항목이 있으면 sensitivity 비교
+            if sensitivity > existing_entry["sensitivity"]:
+                # 새 항목의 sensitivity가 더 높으면 기존 항목 교체
+                self.results.remove(existing_entry)
+                self.results.append(new_entry)
+            # sensitivity가 같거나 낮으면 아무 것도 하지 않음 (기존 항목 유지)
+        else:
+            # 기존 항목이 없으면 새 항목 추가
+            self.results.append(new_entry)
+
+    def save_to_json(self):
+        try:
+            with open(self.json_file_path, 'w') as f:
+                json.dump(self.results, f, indent=4)
+        except IOError as e:
+            print(f"파일 쓰기 오류: {e}")

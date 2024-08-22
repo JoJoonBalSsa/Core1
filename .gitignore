@@ -1,3 +1,6 @@
 __pycache__/
 result.txt
 christmas/
+error_log.txt
+analysis_result1.json
+printAST.py
