@@ -279,9 +279,9 @@ class taintAnalysis:
     'setClob': 1.5,
 
     # 시스템 명령 실행
-    'exec': 2,
-    'runtime.exec': 2,
-    'processBuilder.start': 2,
+    'exec': 1.5,
+    'runtime.exec': 1.5,
+    'processBuilder.start': 1.5,
     'load': 1.5,
     'loadLibrary': 1.5,
 
@@ -365,10 +365,10 @@ class taintAnalysis:
     'show': 0.5,
 
     # 네이티브 메서드
-    'registerNatives': 2,
+    'registerNatives': 1.5,
 
     # ClassLoader
-    'defineClass': 2,
+    'defineClass': 1.5,
     'findClass': 1.5,
 
     # Annotation Processing
