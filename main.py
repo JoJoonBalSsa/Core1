@@ -51,6 +51,7 @@ def __analyze_method(flows):
             current_path = tainted._file_path
             tree_position = tainted._get_position
             source_code = tainted._extract_method_source_code()
+            method_name = method_full_path # 추가
 
             result.append(sensitivity, current_path, method_name, tree_position, cut_tree, source_code)
 
