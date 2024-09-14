@@ -18,18 +18,11 @@ def create_result(flows):
             file.write("\n")
     
 
-def print_result(flows):
-    for f in flows:
-        print(f)
-    print()
-
-
 
 def main(java_folder_path, output_folder):
     tainted = taintAnalysis(java_folder_path)
     f_flow=tainted._priority_flow()
 
-    print_result(f_flow)
     create_result(tainted.flows)
     __analyze_method(f_flow, tainted)
 
@@ -43,7 +36,6 @@ def __analyze_method(flows, tainted):
 
         for count in range(1, len(flow)):
             method_full_path = flow[count]
-            print(method_full_path)
             big_parts = method_full_path.split(',') 
             if len(big_parts) == 1:
                 big_parts.append("")
