@@ -4,7 +4,7 @@ import datetime
 from collections import defaultdict, Counter
 
 class MakeMD:
-    def __init__(self, input_file='result.txt', output_file='analysis_result3.md'):
+    def __init__(self, input_file='result.txt', output_file='analysis_result.md'):
         self.input_file = input_file
         self.output_file = output_file
 
