@@ -1,17 +1,12 @@
-import os
-import matplotlib.pyplot as plt
-import networkx as nx
-import datetime
-import math
 import re
+import os
+import datetime
+from collections import defaultdict, Counter
 
 class MakeMD:
-    def __init__(self, input_file='result.txt', output_file='analysis_result.md'):
+    def __init__(self, input_file='result.txt', output_file='analysis_result3.md'):
         self.input_file = input_file
         self.output_file = output_file
-        self.graph_dir = 'call_graphs'
-        if not os.path.exists(self.graph_dir):
-            os.makedirs(self.graph_dir)
 
     def parse_result_file(self):
         tainted_variables = []
@@ -43,8 +38,7 @@ class MakeMD:
             i += 1
         
         return tainted_variables
-    
-    
+
     def clean_flow(self, flow_string):
         # 대괄호 제거
         cleaned_string = flow_string.strip()[1:-1]
@@ -56,129 +50,162 @@ class MakeMD:
         cleaned_items = [item.replace(',', '').strip() for item in items]
 
         return cleaned_items
-    
 
-    def create_call_graph_image(self, flow, idx):
-        if len(flow) < 2:
-            print(f"Warning: Not enough nodes to create a graph for flow {idx}.")
-            return None
+    def create_call_graph_svg(self, flow):
+        nodes = flow
+        edges = list(zip(flow[:-1], flow[1:]))
+        node_counts = Counter(nodes)
 
-        G = nx.DiGraph()
-        for i in range(len(flow) - 1):
-            G.add_edge(flow[i], flow[i+1])
-        
-        node_count = len(G.nodes())
-        
-        # 이미지 크기 조정 (더 완만한 스케일링)
-        base_size = 12  # 기본 크기
-        size_factor = math.sqrt(node_count) * 0.5 + 1  # 제곱근 사용으로 완만한 증가
-        fig_size = (base_size * size_factor, base_size * size_factor / 2)
-        
-        # 노드 크기 조정 (선형 감소와 하한선 설정)
-        max_node_size = 7000
-        min_node_size = 3000
-        node_size = max(min_node_size, max_node_size - (node_count * 200))
-        
-        # 폰트 크기 조정 (선형 감소와 하한선 설정)
-        max_font_size = 10
-        min_font_size = 6
-        font_size = max(min_font_size, max_font_size - (node_count * 0.2))
+        class_nodes = defaultdict(list)
+        for node in dict.fromkeys(nodes):  # 중복 제거하면서 순서 유지
+            class_name, method = node.rsplit('.', 1)
+            class_nodes[class_name].append(method)
 
-        # 그래프 레이아웃 설정 (왼쪽에서 오른쪽으로)
-        pos = nx.spring_layout(G, k=1, iterations=50)
-        
-        # 노드 위치 조정 (y 좌표만 사용)
-        y_coords = [coord[1] for coord in pos.values()]
-        y_min, y_max = min(y_coords), max(y_coords)
-        
-        for node, (x, y) in pos.items():
-            pos[node] = (x, (y - y_min) / (y_max - y_min))
-        
-        # 그래프 크기 설정
-        plt.figure(figsize=fig_size)
-        
-        # 노드 그리기
-        nx.draw_networkx_nodes(G, pos, node_color='lightblue', node_size=node_size, alpha=0.8)
-        
-        # 엣지 그리기
-        nx.draw_networkx_edges(G, pos, edge_color='gray', arrows=True, arrowsize=20)
-        
-        # 레이블 그리기
-        label_pos = {k: (v[0], v[1]+0.02) for k, v in pos.items()}  # 레이블 위치 약간 위로 조정
-        nx.draw_networkx_labels(G, label_pos, font_size=font_size, font_weight='bold')
-        
-        # 그래프 여백 조정
-        plt.margins(0.2)
-        
-        # 축 제거
-        plt.axis('off')
-        
-        # 타이틀 설정
-        plt.title(f"Call Graph {idx}", fontsize=16)
-        
-        # 이미지 저장
-        plt.tight_layout()
-        image_filename = f'call_graph_{idx}.png'
-        image_path = os.path.abspath(os.path.join(self.graph_dir, image_filename))
+        svg_width = 1200  # 너비 증가
+        svg_height = max(len(max(class_nodes.values(), key=len)) * 60, 400)
+        class_width = svg_width / len(class_nodes)
+        node_radius = 5
+        font_size = 12
 
-        # 디렉토리 존재 확인 및 생성
-        os.makedirs(os.path.dirname(image_path), exist_ok=True)
+        svg = [f'''<?xml version="1.0" encoding="UTF-8"?>
+        <svg width="{svg_width}" height="{svg_height}" xmlns="http://www.w3.org/2000/svg">
+            <style>
+                .node {{ fill: blue; }}
+                .node-text {{ font-size: {font_size}px; }}
+                .class-label {{ fill: white; }}
+                .class-text {{ font-size: 14px; font-weight: bold; }}
+                .edge {{ stroke: black; fill: none; stroke-width: 1.5; }}
+                .background {{ fill: white; }}
+                .duplicate-count {{ font-size: 10px; fill: red; font-weight: bold; }}
+            </style>
+            <rect width="100%" height="100%" class="background"/>
+        ''']
 
-        plt.savefig(image_path, dpi=300, bbox_inches='tight')
-        plt.close()
+        node_positions = {}
 
-        Realative_path = "./call_graphs/" + image_filename
+        for i, (class_name, methods) in enumerate(class_nodes.items()):
+            class_x = i * class_width + class_width / 2
+            label_width = len(class_name) * 10 + 20
+            label_height = 30
 
-        return Realative_path
+            svg.append(f'<rect x="{class_x - label_width/2}" y="10" width="{label_width}" height="{label_height}" rx="5" ry="5" fill="#4a4a4a"/>')
+            svg.append(f'<text x="{class_x}" y="30" class="class-text" text-anchor="middle" fill="white">{class_name}</text>')
+
+            for j, method in enumerate(methods):
+                full_node_name = f"{class_name}.{method}"
+                x = class_x
+                y = 60 + j * 50
+                node_positions[full_node_name] = (x, y)
+                svg_id = re.sub(r'[^\w]', '_', full_node_name)
+                count = node_counts[full_node_name]
+
+                svg.append(f'<g id="{svg_id}">')
+                svg.append(f'<circle cx="{x}" cy="{y}" r="{node_radius}" class="node" />')
+                svg.append(f'<text x="{x + node_radius + 5}" y="{y + 5}" class="node-text">{method}</text>')
+                if count > 1:
+                    svg.append(f'<text x="{x + node_radius + 5 + len(method) * 7}" y="{y + 5}" class="duplicate-count"> ({count})</text>')
+                svg.append('</g>')
+
+        # 엣지 그리기 (중복 제거)
+        drawn_edges = set()
+        for start, end in edges:
+            edge = (start, end)
+            if edge in drawn_edges or start == end:
+                continue
+            
+            if start in node_positions and end in node_positions:
+                x1, y1 = node_positions[start]
+                x2, y2 = node_positions[end]
+
+                dx = x2 - x1
+                dy = y2 - y1
+                dist = (dx**2 + dy**2)**0.5
+
+                cx1 = x1 + dx * 0.25
+                cy1 = y1 + dy * 0.1
+                cx2 = x2 - dx * 0.25
+                cy2 = y2 - dy * 0.1
+
+                curve_height = min(100, max(20, dist * 0.2))
+
+                if y2 > y1:
+                    cy1 -= curve_height
+                    cy2 -= curve_height
+                else:
+                    cy1 += curve_height
+                    cy2 += curve_height
+
+                svg.append(f'<path d="M{x1},{y1} C{cx1},{cy1} {cx2},{cy2} {x2},{y2}" class="edge" marker-end="url(#arrowhead)" />')
+                drawn_edges.add(edge)
+
+        svg.append('''
+            <defs>
+                <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+                    <polygon points="0 0, 10 3.5, 0 7" fill="black" />
+                </marker>
+            </defs>
+        ''')
+
+        svg.append('</svg>')
+        return ''.join(svg)
 
     def make_md_file(self):
         tainted_variables = self.parse_result_file()
         if not tainted_variables:
             print("Error: No tainted variables found. The markdown file will not be created.")
             return
+        
+        def create_anchor(text):
+            # 소문자로 변환하고 특수 문자 제거
+            anchor = re.sub(r'[^\w\- ]', '', text.lower())
+            # 공백을 대시로 변환
+            anchor = anchor.replace(' ', '-')
+            return anchor
 
         with open(self.output_file, 'w', encoding='utf-8') as md_file:
-            # Write file header
-            md_file.write(f"# 결과 보고서\n")
+            # 파일 헤더 및 목차 작성
+            md_file.write(f"# 결과 보고서\n\n")
             md_file.write(f"**생성일:** {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
             md_file.write(f"**생성 도구:** Taint Bomb\n\n")
-            
-            # Write table of contents
+
+            # 목차 작성
             md_file.write("## 목차\n")
             md_file.write("- [개요](#개요)\n")
-            md_file.write("- [콜 그래프](#콜-그래프)\n")
-            md_file.write("- [상세 분석](#상세-분석)\n\n")
-            
-            # Write overview
+            for i, var_info in enumerate(tainted_variables, 1):
+                anchor = create_anchor(f"흐름 {i} {var_info['variable']}")
+                md_file.write(f"- [흐름 {i}: {var_info['variable']}](#{anchor})\n")
+            md_file.write("\n")
+
+            # 개요 작성
             md_file.write("## 개요\n")
             md_file.write("이 보고서는 코드베이스에 대한 분석 결과를 제공하며, 잠재적인 보안 위험과 취약점을 식별합니다.\n")
-            md_file.write("다음 섹션에는 코드 내에서 오염된 데이터의 흐름을 시각화한 콜 그래프와, 각 오염된 변수에 대한 자세한 정보가 포함되어 있습니다.\n\n")
-            
+            md_file.write("각 섹션에는 오염된 데이터의 흐름을 시각화한 콜 그래프와 상세 정보가 포함되어 있습니다.\n\n")
+
             # Write call graph section
             md_file.write("## 콜 그래프\n")
             md_file.write("아래는 애플리케이션에서 오염된 데이터의 흐름을 나타내는 콜 그래프입니다. 각 그래프 뒤에는 관련된 오염된 변수에 대한 상세 분석이 이어집니다.\n\n")
-            
-            for idx, var_info in enumerate(tainted_variables, start=1):
-                image_path = self.create_call_graph_image(var_info['flow'], idx)
-                print(f"Graph saved to: {image_path}")
-                print(f"var_info : {var_info}")
-                if image_path:
-                    md_file.write(f"### 콜 그래프 {idx}: `{var_info['variable']}`\n")
-                    md_file.write(f"![콜 그래프 {idx}]({image_path})\n\n")
-                    
-                    # Write flow description
-                    md_file.write(f"**오염된 데이터의 흐름:**\n")
-                    md_file.write("```text\n")
-                    md_file.write(" -> ".join(var_info['flow']))
-                    md_file.write("\n```\n\n")
-            
-            # Write detailed analysis section
-            md_file.write("## 상세 분석\n")
-            md_file.write("다음 섹션에서는 각 오염된 변수에 대한 자세한 정보와 잠재적인 영향, 권장 완화 방법을 제공합니다.\n\n")
-        
-        print(f"Markdown 보고서가 생성되었습니다: {self.output_file}")
 
-# Example execution
-if __name__ == "__main__":
-    maker = MakeMD(input_file='result.txt')
-    maker.make_md_file()
+            # 각 흐름에 대한 콜 그래프와 상세 정보 작성
+            for i, var_info in enumerate(tainted_variables, 1):
+                md_file.write(f"## 흐름 {i}: `{var_info['variable']}`\n\n")
+
+                # SVG 콜 그래프 생성 및 삽입
+                svg_content = self.create_call_graph_svg(var_info['flow'])
+                md_file.write("<div class='call-graph'>\n")
+                md_file.write(svg_content)
+                md_file.write("</div>\n\n")
+
+                # 흐름 상세 정보 작성
+                md_file.write(f"**오염된 변수:** `{var_info['variable']}`\n\n")
+                md_file.write("**데이터 흐름:**\n")
+                md_file.write("```\n")
+                md_file.write(" -> ".join(var_info['flow']))
+                md_file.write("\n```\n\n")
+
+            # CSS 스타일 추가
+            md_file.write("<style>\n")
+            md_file.write(".call-graph { overflow: auto; max-width: 100%; max-height: 600px; border: 1px solid #ddd; margin-bottom: 20px; }\n")
+            md_file.write(".call-graph svg { min-width: 100%; min-height: 100%; }\n")
+            md_file.write("</style>\n")
+
+        print(f"Markdown 보고서가 생성되었습니다: {self.output_file}")
