@@ -7,7 +7,7 @@ def create_result(flows):
     with open("result.txt", 'w', encoding='utf-8') as file:  # 결과 파일 생성
         for (class_method, var), value in flows.items():
             file.write("Tainted Variable:\n")
-            file.write(f"{class_method}, {var}\n")
+            file.write(f"{var}\n")
             file.write("흐름 파악\n")
             for f in value:
                     if isinstance(f[0], list):
@@ -18,18 +18,11 @@ def create_result(flows):
             file.write("\n")
     
 
-def print_result(flows):
-    for f in flows:
-        print(f)
-    print()
-
-
 
 def main(java_folder_path, output_folder):
     tainted = taintAnalysis(java_folder_path)
     f_flow=tainted._priority_flow()
 
-    print_result(f_flow)
     create_result(tainted.flows)
     __analyze_method(f_flow, tainted)
 
@@ -43,7 +36,6 @@ def __analyze_method(flows, tainted):
 
         for count in range(1, len(flow)):
             method_full_path = flow[count]
-            print(method_full_path)
             big_parts = method_full_path.split(',') 
             if len(big_parts) == 1:
                 big_parts.append("")
@@ -64,5 +56,5 @@ def __analyze_method(flows, tainted):
 
 if __name__ == "__main__":
     # Specify the folder containing Java files
-    java_folder_path = 'christmas'
+    java_folder_path = '박하은_크리스마스'
     main(java_folder_path, java_folder_path)
