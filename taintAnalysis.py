@@ -4,9 +4,10 @@ from collections import defaultdict
 import logging
 from sensitivityDB import SensitivityDB as S
 from methodEndLineFinder import MethodEndLineFinder
+from JavaSymbolGenerator import JavaSymbolGenerator
+import inspect
 
-
-class taintAnalysis:
+class TaintAnalysis:
     __methods = defaultdict(list)
 
     __tainted_variables = []
@@ -14,17 +15,17 @@ class taintAnalysis:
     _get_position=""
     _current_node=None
     _file_path=""
-    source_codes = {} 
+    source_codes = {}
     _t_tree=defaultdict(list)
     flows = defaultdict(list)
     method_check = []
     sink_check = []
-    
+
     #메서드 단위로 AST 노드 저장, Taint 변수 탐색 및 저장
-    def __init__(self, java_folder_path): 
+    def __init__(self, java_folder_path):
         # 로그 설정
-        logging.basicConfig(filename='taint_analysis.log', level=logging.INFO, 
-                            format='%(asctime)s - %(message)s', 
+        logging.basicConfig(filename='taint_analysis.log', level=logging.INFO,
+                            format='%(asctime)s - %(message)s',
                             datefmt='%Y-%m-%d %H:%M:%S')
         # Step 1: Parse all Java files
         trees = self.__parse_java_files(java_folder_path)
@@ -34,14 +35,14 @@ class taintAnalysis:
 
         # Step 3: Append flow
         self.__append_flow()
-        #self.__new_tree() 
+        #self.__new_tree()
 
-        
+
 
 
     def _priority_flow(self):
         prioritized_flows = []
-        
+
         for (class_method, var), value in self.flows.items():
             for flow in self.flows[(class_method, var)]:
                 # 흐름에서 첫 번째 항목 (source)와 마지막 항목 (sink)을 가져옴
@@ -65,15 +66,16 @@ class taintAnalysis:
 
         # 우선순위에 따라 flows를 정렬
         # prioritized_flows.sort(reverse=True, key=lambda x: x[0])
-        
+
         # 최종 결과 출력 (필요에 따라 반환하거나 다른 용도로 사용)
         # for flow in prioritized_flows:
         #     print(flow)
-        
+
         return prioritized_flows
 
 
     def __parse_java_files(self, folder_path):
+        generator = JavaSymbolGenerator()
         logging.basicConfig(level=logging.INFO)
         logger = logging.getLogger(__name__)
 
@@ -82,6 +84,7 @@ class taintAnalysis:
         error_files = []
         success_files = []
         total_files = 0
+        all_symbols = {}
 
         for root, _, files in os.walk(folder_path):
             for file_name in files:
@@ -94,15 +97,25 @@ class taintAnalysis:
                         tree = javalang.parse.parse(source_code)
                         trees.append((file_path, tree))
                         self.source_codes[file_path] = source_code  # 파일 경로와 소스 코드를 딕셔너리에 저장
+                        find_symbol = generator.generate_symbols(tree, file_path)
+                        all_symbols.update(find_symbol)
                         success_files.append(file_path)
                         logger.info(f"파싱 성공: {file_path}")
-                    except Exception as e:
+                    except javalang.parser.JavaSyntaxError as e:
+                        error_message = f"문법 오류 발생 in {file_path}: {str(e)}"
+                        logger.error(error_message)
+                        error_files.append((file_path, str(e)))
+
+                    except javalang.parser.JavaParserError as e:
                         error_message = f"파싱 오류 발생 in {file_path}: {str(e)}"
                         logger.error(error_message)
                         error_files.append((file_path, str(e)))
 
+        generator.save_to_json(all_symbols, "JavaSymbolOutput.json")
+
+
         logger.info(f"총 {total_files}개의 파일 중 {len(success_files)}개 파싱 성공, {len(error_files)}개 파싱 실패")
-        
+
         if error_files:
             logger.error("파싱 오류가 발생한 파일들:")
             for file_path, error in error_files:
@@ -120,7 +133,7 @@ class taintAnalysis:
 
                 elif isinstance(node, javalang.tree.MethodDeclaration):
                     self.__extract_methods(node, current_class, file_path)
-                
+
                 elif isinstance(node, javalang.tree.ConstructorDeclaration):
                     self.__extract_methods(node, current_class, file_path)
 
@@ -133,16 +146,16 @@ class taintAnalysis:
         for sub_path, sub_node in node:
             count +=1 # 각각의 taint 변수가 생겨난 지점 식별
             self.__extract_variables(sub_node, current_class, method_name, count)
-            
-    
+
+
     def __extract_variables(self, sub_node, current_class, method_name, count):
         # 변수 선언 및 정의일 때
-        if isinstance(sub_node, javalang.tree.VariableDeclarator): 
+        if isinstance(sub_node, javalang.tree.VariableDeclarator):
             if isinstance(sub_node.initializer, javalang.tree.MethodInvocation):
-                if sub_node.initializer.member in S.source_functions.keys():  
+                if sub_node.initializer.member in S.source_functions.keys():
                     self.__tainted_variables.append((f"{current_class}.{method_name}.{sub_node.initializer.member}", sub_node.name , count))
                     self.method_check.append(method_name)
-                
+
             elif isinstance(sub_node.initializer, javalang.tree.ClassCreator):
                 for arg in sub_node.initializer.arguments:
                     if isinstance(arg, javalang.tree.ClassCreator):
@@ -153,12 +166,12 @@ class taintAnalysis:
                                     self.method_check.append(method_name)
 
         #변수 할당일 때
-        elif isinstance(sub_node, javalang.tree.Assignment): 
+        elif isinstance(sub_node, javalang.tree.Assignment):
             if isinstance(sub_node.value, javalang.tree.MethodInvocation):
-                if sub_node.value.member in S.source_functions: 
+                if sub_node.value.member in S.source_functions:
                     self.__tainted_variables.append((f"{current_class}.{method_name}.{sub_node.value.member}", sub_node.expressionl.member , count))
-            
-        #TRY문 
+
+        #TRY문
         elif isinstance(sub_node, javalang.tree.TryResource):
             if isinstance(sub_node.value, javalang.tree.ClassCreator):
                 for arg in sub_node.value.arguments:
@@ -167,7 +180,7 @@ class taintAnalysis:
                             if isinstance(inner_arg, javalang.tree.MethodInvocation):
                                 if inner_arg.member in S.source_functions:
                                     self.__tainted_variables.append((f"{current_class}.{method_name}.{inner_arg.member}", sub_node.name, count))
-        
+
 
     def __append_flow(self):
         for class_method, var, count in self.__tainted_variables:
@@ -184,7 +197,7 @@ class taintAnalysis:
                 i += 1
                 new_key = (base_key1, f"{base_key2}_{i}")
             return new_key
-        
+
         else:
             return key_tuple
 
@@ -206,14 +219,14 @@ class taintAnalysis:
                             # 끝 줄을 재귀적으로 계산합니다.
                             finder = MethodEndLineFinder(self.source_codes[file_path])
                             end_line = finder.find_method_end_line(start_line)
-                            
+
 
                             # Store start and end positions in a single variable
                             self._get_position=f"{start_line}-{end_line}"
                             # Return or use node_positions as needed
                             return self._method_declaration_to_string(node)
 
-                           
+
     def _method_declaration_to_string(self, method_node):
         """
         MethodDeclaration 객체를 전체적으로 문자열로 변환합니다.
@@ -221,10 +234,10 @@ class taintAnalysis:
         # 메소드 이름과 매개변수를 포함한 서명
         params = ', '.join([f"{param.type.name} {param.name}" for param in method_node.parameters])
         method_signature = f"Method: {method_node.name}({params})"
-        
+
         # 메소드의 본문을 문자열로 변환
         method_body = self._node_to_string(method_node.body)
-        
+
         return f"{method_signature}\nBody:\n{method_body}"
 
 
@@ -243,54 +256,65 @@ class taintAnalysis:
                 result.append(self._node_to_string(node.statements))
             else:
                 result.append(str(node))
-        
+
         return '\n'.join(result)
 
 
     def _extract_method_source_code(self):
         start_line_str, end_line_str = self._get_position.split('-')
-        
-        
+
+
         # 파일 경로에 해당하는 소스 코드를 가져옵니다.
         if self._file_path not in self.source_codes:
             raise ValueError(f"파일 경로 '{self._file_path}'가 source_codes에 존재하지 않습니다.")
 
         source_code = self.source_codes[self._file_path]
-        
+
         # 시작 줄과 끝 줄을 분리하여 정수로 변환합니다.
         start_line_str, end_line_str = self._get_position.split('-')
         start_line = int(start_line_str)
         end_line = int(end_line_str)
-        
+
         # 소스 코드에서 해당 범위를 추출합니다.
         lines = source_code.splitlines()
-        
+
         # 시작 줄과 끝 줄을 기준으로 코드 추출
         if start_line < 1 or end_line > len(lines):
             raise ValueError(f"잘못된 줄 번호 범위: 시작 줄 {start_line}, 끝 줄 {end_line}")
-        
+
         extracted_lines = lines[start_line - 1:end_line]
-        
+
         return ''.join(extracted_lines)
 
 
     def __track_variable_flow(self, class_method, var_name, count=0): #변수 흐름 추적. (계속 추가 가능)
+
+        MAX_RECURSION_DEPTH = 30  # 재귀 호출 최대 깊이 설정
+
+        # 현재 재귀 깊이를 가져옴
+        current_recursion_depth = len(inspect.stack())
+
+        # 재귀 깊이가 MAX_RECURSION_DEPTH 이상이면 종료
+        if current_recursion_depth >= MAX_RECURSION_DEPTH:
+            print(f"Recursion limit reached for variable: {class_method}.{var_name}, stopping further tracing.")
+            return
+
+
         parts = class_method.split('.')
 
-        class_name = parts[0] 
+        class_name = parts[0]
 
         if parts[1] is None:
             parts[1] = " "
 
-        method_name = parts[1]  
+        method_name = parts[1]
         self.__flow.append(class_method) # 흐름 추가
-        method_nodes = self.__methods.get((class_name, method_name), []) #메서드 단위로 저장해둔 노드로 바로 접근 가능 
+        method_nodes = self.__methods.get((class_name, method_name), []) #메서드 단위로 저장해둔 노드로 바로 접근 가능
 
         current_count=0
         for file_path, method_node in method_nodes:
             for path, node in method_node: #노드 내부 탐색
                 current_count +=1
-
                 if current_count <= count:
                     continue
 
@@ -299,36 +323,36 @@ class taintAnalysis:
                     self.__if_find_sink(node, class_method, var_name, count, current_count)
 
                 #변수 할당일 때
-                if isinstance(node, javalang.tree.Assignment): 
+                if isinstance(node, javalang.tree.Assignment):
                     self.__if_variable_assignment(node, class_method, var_name, count, current_count)
 
                 # 지역변수 선언일 때
-                elif isinstance(node, javalang.tree.LocalVariableDeclaration):  
+                elif isinstance(node, javalang.tree.LocalVariableDeclaration):
                     self.__if_local_variable_declaration(node, class_method, var_name, count, current_count)
 
                 # 메서드 호출일 때
                 elif isinstance(node, javalang.tree.MethodInvocation):
-                    self.__if_call_method(node, var_name, count, current_count)
+                    self.__if_call_method(node, class_method, var_name, count, current_count)
 
                 # for 문일 때
-                elif isinstance(node, javalang.tree.ForStatement): 
+                elif isinstance(node, javalang.tree.ForStatement):
                     self.__if_for_statement(node, class_method, var_name, count, current_count)
 
         if self.__flow:
             self.__flow.pop()
-            
-        
+
+
     def __if_find_sink(self, node, class_method, var_name, count, current_count):
         parts = class_method.split('.')
-        class_name = parts[0]  
-        method_name = parts[1]  
+        class_name = parts[0]
+        method_name = parts[1]
 
         if current_count <= count:
             return
-        
+
         if node.member in S.sink_functions.keys() and node.arguments:
             flow_added = False
-            
+
             for arg in node.arguments:
                 # 인자가 하나일 때
                 if isinstance(arg, javalang.tree.MemberReference):
@@ -339,12 +363,12 @@ class taintAnalysis:
                 else:
                     flow_added = self.__judge_binary_operation(arg, flow_added, var_name)
                     if flow_added == True:
-                       break
+                        break
 
             if flow_added:
                 self.__flow.append(f"{class_name}.{method_name}.{node.member}")
                 log_message = f".{method_name}.{node.qualifier}.{node.member}"
-                logging.info(log_message)
+                #logging.info(log_message)
                 self.sink_check.append(node.member)
                 # 새로운 키를 생성하고, 기존 키가 존재하면 새 키를 사용
                 existing_key = (class_method, var_name)
@@ -353,7 +377,7 @@ class taintAnalysis:
                     self.flows[new_key] = []
                 # flows에 __flow 복사
                 self.flows[new_key].append(self.__flow[:])
-                self.__flow.pop()      
+                self.__flow.pop()
 
 
     def __judge_binary_operation(self, arg, flow_added, var_name):
@@ -375,30 +399,24 @@ class taintAnalysis:
 
 
     def __if_variable_assignment(self, node, class_method, var_name, count, current_count):
-        try:
-            if isinstance(node.value, javalang.tree.MethodInvocation):  # 2-2
-                if node.value.arguments:
-                    for arg_index, arg in enumerate(node.value.arguments):
-                        if isinstance(arg, javalang.tree.MemberReference) and arg.member == var_name and (count < current_count):
-                            # self.__flow.append([node.value.member,var_name])
-                            self.__track_variable_flow(class_method, node.expressionl.member, current_count)  # 같은 메서드에서 추적
+        if isinstance(node.value, javalang.tree.MethodInvocation):  # 2-2
+            if node.value.arguments:
+                for arg_index, arg in enumerate(node.value.arguments):
+                    if isinstance(arg, javalang.tree.MemberReference) and arg.member == var_name and (count < current_count):
+                        expression_member = getattr(node, 'expressionl', None)
+                        if expression_member and hasattr(expression_member, 'member'):
+                            self.__track_variable_flow(class_method, expression_member.member, current_count)  # 같은 메서드에서 추적
 
-            if isinstance(node.value, javalang.tree.MethodInvocation) and (node.value.qualifier == var_name) and (count < current_count):
-                # self.__flow.append([node.value.member,var_name])
-                self.__track_variable_flow(class_method, node.expressionl.member, current_count)  # 같은 메서드에서 추적
+        if isinstance(node.value, javalang.tree.MethodInvocation) and (getattr(node.value, 'qualifier', None) == var_name) and (count < current_count):
+            self.__track_variable_flow(class_method, getattr(node, 'expressionl', None).member, current_count)  # 같은 메서드에서 추적
 
-            if isinstance(node.expressionl, javalang.tree.MemberReference) and node.value.member == var_name and (count < current_count):  # 1-1
-                self.__track_variable_flow(class_method, node.expressionl.member, current_count)
+        if isinstance(node.expressionl, javalang.tree.MemberReference) and (getattr(node.value, 'member', None) == var_name) and (count < current_count):  # 1-1
+            self.__track_variable_flow(class_method, getattr(node, 'expressionl', None).member, current_count)
 
-            if isinstance(node.expressionl, javalang.tree.MemberReference) and node.expressionl.member == var_name and (count < current_count):  # 1-2
-                # 초기화 값이 Source 함수일 경우 추가 필요
-                if count < current_count:
-                    return
-
-        except Exception as e:
-            error_message = f"오류 발생 in __if_variable_assignment: {str(e)}"
-            logging.error(error_message)  # 오류 메시지를 파일에 기록
-            pass  # 오류 발생 시 무시하고 계속 진행
+        if isinstance(node.expressionl, javalang.tree.MemberReference) and (getattr(node.expressionl, 'member', None) == var_name) and (count < current_count):  # 1-2
+            # 초기화 값이 Source 함수일 경우 추가 필요
+            if count < current_count:
+                return
 
 
     def __if_local_variable_declaration(self, node, class_method, var_name, count, current_count):
@@ -419,15 +437,18 @@ class taintAnalysis:
                 self.__track_variable_flow(class_method, var_decl.name,current_count)
 
 
-    def __if_call_method(self, node, var_name, count, current_count):
-       if node.arguments: 
+    def __if_call_method(self, node, class_method, var_name, count, current_count):
+        if node.arguments:
             for arg_index, arg in enumerate(node.arguments):
                 if isinstance(arg, javalang.tree.MemberReference):
-                    if arg.member == var_name and (count<current_count) : # 4-1                                            
+                    print(class_method)
+                    print(arg)
+                    # method_signature = JavaSymbolGenerator._get_method_signature(node.name, node)
+                    if arg.member == var_name and (count<current_count) : # 4-1
                         class_method_2, var_name_2 = self.__call2method(node,arg_index)
                         var_name_2 = var_name if var_name_2 == None else var_name_2 # 소스코드에 없는 메서드 호출시 var_name_2 가 None 이 되는경우 방지
                         self.__track_variable_flow(class_method_2,var_name_2)
-                        
+
                 elif isinstance(arg, javalang.tree.BinaryOperation):
                     self.__process_binary_operation(arg, node, var_name, count, current_count)
 
@@ -445,8 +466,8 @@ class taintAnalysis:
         elif isinstance(binary_op.operandr, javalang.tree.MemberReference):
             if binary_op.operandr.member == var_name:
                 self.__track_variable_flow(f"{type(node).__name__}.{node.member}", binary_op.operandr.member)
-    
-    
+
+
     def __call2method(self, node, arg_index):
         invoked_method = node.member
         for target_class_method, target_method_nodes in self.__methods.items():
