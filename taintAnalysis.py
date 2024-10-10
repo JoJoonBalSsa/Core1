@@ -2,10 +2,12 @@ import javalang
 import os
 from collections import defaultdict
 import logging
+import javalang.tree
 from sensitivityDB import SensitivityDB as S
 from methodEndLineFinder import MethodEndLineFinder
 from JavaSymbolGenerator import JavaSymbolGenerator
 import inspect
+import json
 
 class TaintAnalysis:
     __methods = defaultdict(list)
@@ -20,6 +22,7 @@ class TaintAnalysis:
     flows = defaultdict(list)
     method_check = []
     sink_check = []
+    count = {}
 
     #메서드 단위로 AST 노드 저장, Taint 변수 탐색 및 저장
     def __init__(self, java_folder_path):
@@ -125,61 +128,111 @@ class TaintAnalysis:
 
 
     def __taint_analysis(self, trees):
+        with open("JavaSymbolOutput.json", 'r') as file:
+            js = json.load(file)
         for file_path, tree in trees:
+            current_json = js[file_path]
+            method_declarations = current_json.get("MethodDeclarations", [])
             current_class = "UnknownClass"
+            cnt = 0
             for path, node in tree:
                 if isinstance(node, javalang.tree.ClassDeclaration):
                     current_class = node.name
 
                 elif isinstance(node, javalang.tree.MethodDeclaration):
-                    self.__extract_methods(node, current_class, file_path)
+                    current_class = method_declarations[cnt].split('.')[0]
+                    cnt += 1
+                    self.__extract_methods(node, current_class, file_path, current_json)
 
                 elif isinstance(node, javalang.tree.ConstructorDeclaration):
-                    self.__extract_methods(node, current_class, file_path)
+                    self.__extract_methods(node, current_class, file_path, current_json)
 
 
-    def __extract_methods(self, node, current_class, file_path):
+    def __extract_methods(self, node, current_class, file_path, current_json):
         method_name = node.name
         self.__methods[(current_class, method_name)].append((file_path, node))
 
         count = 0
         for sub_path, sub_node in node:
             count +=1 # 각각의 taint 변수가 생겨난 지점 식별
+            self.count[f"{current_class}.{method_name}"] = count
             self.__extract_variables(sub_node, current_class, method_name, count)
 
 
     def __extract_variables(self, sub_node, current_class, method_name, count):
-        # 변수 선언 및 정의일 때
-        if isinstance(sub_node, javalang.tree.VariableDeclarator):
-            if isinstance(sub_node.initializer, javalang.tree.MethodInvocation):
-                if sub_node.initializer.member in S.source_functions.keys():
-                    self.__tainted_variables.append((f"{current_class}.{method_name}.{sub_node.initializer.member}", sub_node.name , count))
-                    self.method_check.append(method_name)
+        try:
+            # 변수 선언 및 정의일 때
+            if isinstance(sub_node, javalang.tree.VariableDeclarator):
+                if isinstance(sub_node.initializer, javalang.tree.MethodInvocation):
+                    try:
+                        if sub_node.initializer.member in S.source_functions.keys():
+                            self.__tainted_variables.append((f"{current_class}.{method_name}.{sub_node.initializer.member}", sub_node.name , count))
+                            self.method_check.append(method_name)
+                    except Exception:
+                        pass
 
-            elif isinstance(sub_node.initializer, javalang.tree.ClassCreator):
-                for arg in sub_node.initializer.arguments:
-                    if isinstance(arg, javalang.tree.ClassCreator):
-                        for inner_arg in arg.arguments:
-                            if isinstance(inner_arg, javalang.tree.MethodInvocation):
-                                if inner_arg.member in S.source_functions:
-                                    self.__tainted_variables.append((f"{current_class}.{method_name}.{inner_arg.member}", sub_node.name, count))
-                                    self.method_check.append(method_name)
+                elif isinstance(sub_node.initializer, javalang.tree.ClassCreator):
+                    try:
+                        for arg in sub_node.initializer.arguments:
+                            if isinstance(arg, javalang.tree.ClassCreator):
+                                for inner_arg in arg.arguments:
+                                    if isinstance(inner_arg, javalang.tree.MethodInvocation):
+                                        if inner_arg.member in S.source_functions:
+                                            self.__tainted_variables.append((f"{current_class}.{method_name}.{inner_arg.member}", sub_node.name, count))
+                                            self.method_check.append(method_name)
+                    except Exception:
+                        pass
 
-        #변수 할당일 때
-        elif isinstance(sub_node, javalang.tree.Assignment):
-            if isinstance(sub_node.value, javalang.tree.MethodInvocation):
-                if sub_node.value.member in S.source_functions:
-                    self.__tainted_variables.append((f"{current_class}.{method_name}.{sub_node.value.member}", sub_node.expressionl.member , count))
+            # 변수 할당일 때
+            elif isinstance(sub_node, javalang.tree.Assignment):
+                try:
+                    if isinstance(sub_node.value, javalang.tree.MethodInvocation):
+                        # 직접 MethodInvocation의 member가 source_functions에 있는지 확인
+                        if sub_node.value.member in S.source_functions:
+                            try:
+                                # sub_node.expressionl이 MemberReference인지 확인
+                                if isinstance(sub_node.expressionl, javalang.tree.MemberReference):
+                                    self.__tainted_variables.append((f"{current_class}.{method_name}.{sub_node.value.member}", sub_node.expressionl.member, count))
 
-        #TRY문
-        elif isinstance(sub_node, javalang.tree.TryResource):
-            if isinstance(sub_node.value, javalang.tree.ClassCreator):
-                for arg in sub_node.value.arguments:
-                    if isinstance(arg, javalang.tree.ClassCreator):
-                        for inner_arg in arg.arguments:
-                            if isinstance(inner_arg, javalang.tree.MethodInvocation):
-                                if inner_arg.member in S.source_functions:
-                                    self.__tainted_variables.append((f"{current_class}.{method_name}.{inner_arg.member}", sub_node.name, count))
+                                # sub_node.expressionl이 This 객체인 경우
+                                elif isinstance(sub_node.expressionl, javalang.tree.This):
+                                    for selector in sub_node.expressionl.selectors:
+                                        if isinstance(selector, javalang.tree.MemberReference):
+                                            self.__tainted_variables.append((f"{current_class}.{method_name}.{sub_node.value.member}", selector.member, count))
+                            except Exception:
+                                pass
+
+                        # MethodInvocation의 인자(arguments)에서 중첩된 MethodInvocation 확인
+                        for inner_arg in sub_node.value.arguments:
+                            try:
+                                if isinstance(inner_arg, javalang.tree.MethodInvocation):
+                                    # 인자의 member가 source_functions에 있는지 확인
+                                    if inner_arg.member in S.source_functions:
+                                        if isinstance(sub_node.expressionl, javalang.tree.MemberReference):
+                                            self.__tainted_variables.append((f"{current_class}.{method_name}.{inner_arg.member}", sub_node.expressionl.member, count))
+                                        elif isinstance(sub_node.expressionl, javalang.tree.This):
+                                            for selector in sub_node.expressionl.selectors:
+                                                if isinstance(selector, javalang.tree.MemberReference):
+                                                    self.__tainted_variables.append((f"{current_class}.{method_name}.{inner_arg.member}", selector.member, count))
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+
+            # TRY문
+            elif isinstance(sub_node, javalang.tree.TryResource):
+                try:
+                    if isinstance(sub_node.value, javalang.tree.ClassCreator):
+                        for arg in sub_node.value.arguments:
+                            if isinstance(arg, javalang.tree.ClassCreator):
+                                for inner_arg in arg.arguments:
+                                    if isinstance(inner_arg, javalang.tree.MethodInvocation):
+                                        if inner_arg.member in S.source_functions:
+                                            self.__tainted_variables.append((f"{current_class}.{method_name}.{inner_arg.member}", sub_node.name, count))
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
 
     def __append_flow(self):
@@ -289,15 +342,16 @@ class TaintAnalysis:
 
     def __track_variable_flow(self, class_method, var_name, count=0): #변수 흐름 추적. (계속 추가 가능)
 
-        MAX_RECURSION_DEPTH = 30  # 재귀 호출 최대 깊이 설정
+        MAX_RECURSION_DEPTH = 20  # 재귀 호출 최대 깊이 설정
 
         # 현재 재귀 깊이를 가져옴
         current_recursion_depth = len(inspect.stack())
 
         # 재귀 깊이가 MAX_RECURSION_DEPTH 이상이면 종료
         if current_recursion_depth >= MAX_RECURSION_DEPTH:
-            print(f"Recursion limit reached for variable: {class_method}.{var_name}, stopping further tracing.")
+            print(f"Recursion limit reached for variable: {var_name}, stopping further tracing.")
             return
+
 
 
         parts = class_method.split('.')
@@ -311,10 +365,18 @@ class TaintAnalysis:
         self.__flow.append(class_method) # 흐름 추가
         method_nodes = self.__methods.get((class_name, method_name), []) #메서드 단위로 저장해둔 노드로 바로 접근 가능
 
+        if class_method in self.count: 
+            count = self.count[class_method]
+        elif count == 0: # 처음 열리는 class_method인 경우
+            self.count[class_method] = count
+        else: # 사용자 정의 함수가 아닐 경우
+            pass
+        
         current_count=0
         for file_path, method_node in method_nodes:
             for path, node in method_node: #노드 내부 탐색
                 current_count +=1
+
                 if current_count <= count:
                     continue
 
@@ -337,6 +399,17 @@ class TaintAnalysis:
                 # for 문일 때
                 elif isinstance(node, javalang.tree.ForStatement):
                     self.__if_for_statement(node, class_method, var_name, count, current_count)
+
+                # try 문일 때
+                elif isinstance(node, javalang.tree.TryResource):
+                    self.__if_try(node,class_method,var_name,count,current_count)
+
+                #삼항연산자 일 때
+                elif isinstance(node, javalang.tree.TernaryExpression):
+                    self.__if_ternary(node,class_method,var_name,count,current_count)
+        
+
+
 
         if self.__flow:
             self.__flow.pop()
@@ -368,7 +441,7 @@ class TaintAnalysis:
             if flow_added:
                 self.__flow.append(f"{class_name}.{method_name}.{node.member}")
                 log_message = f".{method_name}.{node.qualifier}.{node.member}"
-                #logging.info(log_message)
+                logging.info(log_message)
                 self.sink_check.append(node.member)
                 # 새로운 키를 생성하고, 기존 키가 존재하면 새 키를 사용
                 existing_key = (class_method, var_name)
@@ -381,90 +454,143 @@ class TaintAnalysis:
 
 
     def __judge_binary_operation(self, arg, flow_added, var_name):
-        if isinstance(arg, javalang.tree.BinaryOperation):
-            if isinstance(arg.operandl, javalang.tree.MemberReference):
-                if arg.operandl.member == var_name:
-                    flow_added = True
-                    return  flow_added# 하나의 인자만 확인하면 충분
-            if isinstance(arg.operandr, javalang.tree.MemberReference):
-                if arg.operandr.member == var_name:
-                    flow_added = True
-                    return  flow_added# 하나의 인자만 확인하면 충분
-            if isinstance(arg.operandl, javalang.tree.BinaryOperation):
-                flow_added = self.__judge_binary_operation(arg.operandl, flow_added, var_name)
-                return flow_added
-            if isinstance(arg.operandr, javalang.tree.BinaryOperation):
-                flow_added = self.__judge_binary_operation(arg.operandr, flow_added, var_name)
-                return flow_added
+        try:
+            if isinstance(arg, javalang.tree.BinaryOperation):
+                try:
+                    if isinstance(arg.operandl, javalang.tree.MemberReference):
+                        if arg.operandl.member == var_name:
+                            flow_added = True
+                            return flow_added  # 하나의 인자만 확인하면 충분
+                except Exception:
+                    pass
+
+                try:
+                    if isinstance(arg.operandr, javalang.tree.MemberReference):
+                        if arg.operandr.member == var_name:
+                            flow_added = True
+                            return flow_added  # 하나의 인자만 확인하면 충분
+                except Exception:
+                    pass
+
+                try:
+                    if isinstance(arg.operandl, javalang.tree.BinaryOperation):
+                        flow_added = self.__judge_binary_operation(arg.operandl, flow_added, var_name)
+                        return flow_added
+                except Exception:
+                    pass
+
+                try:
+                    if isinstance(arg.operandr, javalang.tree.BinaryOperation):
+                        flow_added = self.__judge_binary_operation(arg.operandr, flow_added, var_name)
+                        return flow_added
+                except Exception:
+                    pass
+
+        except Exception:
+            pass  # 전체적으로 발생할 수 있는 예외를 처리
+
 
 
     def __if_variable_assignment(self, node, class_method, var_name, count, current_count):
-        if isinstance(node.value, javalang.tree.MethodInvocation):  # 2-2
-            if node.value.arguments:
-                for arg_index, arg in enumerate(node.value.arguments):
-                    if isinstance(arg, javalang.tree.MemberReference) and arg.member == var_name and (count < current_count):
-                        expression_member = getattr(node, 'expressionl', None)
-                        if expression_member and hasattr(expression_member, 'member'):
-                            self.__track_variable_flow(class_method, expression_member.member, current_count)  # 같은 메서드에서 추적
+        try:
+            # MethodInvocation 처리
+            if isinstance(node.value, javalang.tree.MethodInvocation):  # 2-2
+                if node.value.arguments:
+                    for arg_index, arg in enumerate(node.value.arguments):
+                        if isinstance(arg, javalang.tree.MemberReference) and arg.member == var_name and (count < current_count):
+                            expression_member = getattr(node, 'expressionl', None)
+                            if expression_member and hasattr(expression_member, 'member'):
+                                self.count[class_method] = current_count
+                                self.__track_variable_flow(class_method, expression_member.member, current_count)  # 같은 메서드에서 추적
 
-        if isinstance(node.value, javalang.tree.MethodInvocation) and (getattr(node.value, 'qualifier', None) == var_name) and (count < current_count):
-            self.__track_variable_flow(class_method, getattr(node, 'expressionl', None).member, current_count)  # 같은 메서드에서 추적
+            if isinstance(node.value, javalang.tree.MethodInvocation) and (getattr(node.value, 'qualifier', None) == var_name) and (count < current_count):
+                self.count[class_method] = current_count
+                self.__track_variable_flow(class_method, getattr(node, 'expressionl', None).member, current_count)  # 같은 메서드에서 추적
 
-        if isinstance(node.expressionl, javalang.tree.MemberReference) and (getattr(node.value, 'member', None) == var_name) and (count < current_count):  # 1-1
-            self.__track_variable_flow(class_method, getattr(node, 'expressionl', None).member, current_count)
+            # MemberReference 처리
+            if isinstance(node.expressionl, javalang.tree.MemberReference) and (getattr(node.value, 'member', None) == var_name) and (count < current_count):  # 1-1
+                self.count[class_method] = current_count
+                self.__track_variable_flow(class_method, getattr(node, 'expressionl', None).member, current_count)
 
-        if isinstance(node.expressionl, javalang.tree.MemberReference) and (getattr(node.expressionl, 'member', None) == var_name) and (count < current_count):  # 1-2
-            # 초기화 값이 Source 함수일 경우 추가 필요
-            if count < current_count:
-                return
+
+            if isinstance(node.expressionl, javalang.tree.MemberReference) and (getattr(node.expressionl, 'member', None) == var_name) and (count < current_count):  # 1-2
+                if count < current_count:
+                    return
+
+
+        except AttributeError as e:
+            print(f"AttributeError encountered: {e}")
+            print(f"Offending node: {node}")
+            print(f"Current method: {class_method}, variable: {var_name}")
+        except Exception as e:
+            # 다른 모든 예외 처리
+            print(f"Exception encountered: {e}")
+            print(f"Offending node: {node}")
+            print(f"Current method: {class_method}, variable: {var_name}")
 
 
     def __if_local_variable_declaration(self, node, class_method, var_name, count, current_count):
-        for var_decl in node.declarators:
-            if isinstance(var_decl.initializer, javalang.tree.MethodInvocation): # 2-2
-                if var_decl.initializer.arguments:
-                    for arg_index, arg in enumerate(var_decl.initializer.arguments):
-                        if isinstance(arg, javalang.tree.MemberReference) and arg.member == var_name and (count<current_count):
-                            #flow.append([class_method,var_name]) 이건 MethodInvocation 노드에서 추가할 듯
-                            self.__track_variable_flow(class_method,var_decl.name,current_count) # 같은 메서드에서 추적
+        try:
+            for var_decl in node.declarators:
+                try:
+                    if isinstance(var_decl.initializer, javalang.tree.MethodInvocation):  # 2-2
+                        if var_decl.initializer.arguments:
+                            for arg in var_decl.initializer.arguments:
+                                if isinstance(arg, javalang.tree.MemberReference) and arg.member == var_name and count < current_count:
+                                    self.count[class_method] = current_count
+                                    self.__track_variable_flow(class_method, var_decl.name, current_count)  # 같은 메서드에서 추적
+                except Exception:  # MethodInvocation 내부 예외 처리
+                    pass
 
-            if isinstance(var_decl.initializer, javalang.tree.MethodInvocation):
-                if (var_decl.initializer.qualifier == var_name) and (count<current_count) : # 2-1
-                    #self.__flow.append([var_decl.initializer.member,var_name])
-                    self.__track_variable_flow(class_method,var_decl.name,current_count) # 같은 메서드에서 추적
+                try:
+                    if isinstance(var_decl.initializer, javalang.tree.MethodInvocation):
+                        if var_decl.initializer.qualifier == var_name and count < current_count:  # 2-1
+                            self.count[class_method] = current_count
+                            self.__track_variable_flow(class_method, var_decl.name, current_count)  # 같은 메서드에서 추적
+                except Exception:  # MethodInvocation 예외 처리
+                    pass
 
-            if isinstance(var_decl.initializer, javalang.tree.MemberReference) and var_decl.initializer.member == var_name and (count<current_count) :  # 1-1
-                self.__track_variable_flow(class_method, var_decl.name,current_count)
+                try:
+                    if isinstance(var_decl.initializer, javalang.tree.MemberReference) and var_decl.initializer.member == var_name and count < current_count:  # 1-1
+                        self.count[class_method] = current_count
+                        self.__track_variable_flow(class_method, var_decl.name, current_count)
+                except Exception:  # MemberReference 예외 처리
+                    pass
+        except Exception:  # node.declarators 처리에서 발생하는 예외를 전체적으로 잡음
+            pass
 
 
     def __if_call_method(self, node, class_method, var_name, count, current_count):
         if node.arguments:
             for arg_index, arg in enumerate(node.arguments):
                 if isinstance(arg, javalang.tree.MemberReference):
-                    print(class_method)
-                    print(arg)
-                    # method_signature = JavaSymbolGenerator._get_method_signature(node.name, node)
+                    # print(class_method)
+                    # print(arg)
                     if arg.member == var_name and (count<current_count) : # 4-1
                         class_method_2, var_name_2 = self.__call2method(node,arg_index)
                         var_name_2 = var_name if var_name_2 == None else var_name_2 # 소스코드에 없는 메서드 호출시 var_name_2 가 None 이 되는경우 방지
+                        self.count[class_method] = current_count
                         self.__track_variable_flow(class_method_2,var_name_2)
 
                 elif isinstance(arg, javalang.tree.BinaryOperation):
-                    self.__process_binary_operation(arg, node, var_name, count, current_count)
+                    self.__process_binary_operation(arg, node, var_name, count, current_count, class_method)
 
 
-    def __process_binary_operation(self, binary_op, node, var_name, count, current_count):
+    def __process_binary_operation(self, binary_op, node, var_name, count, current_count, class_method):
         # 재귀적으로 BinaryOperation을 탐색하여 모든 오퍼랜드를 처리
         if isinstance(binary_op.operandl, javalang.tree.BinaryOperation):
-            self.__process_binary_operation(binary_op.operandl, node, var_name, count, current_count)
+            self.__process_binary_operation(binary_op.operandl, node, var_name, count, current_count, class_method)
         elif isinstance(binary_op.operandl, javalang.tree.MemberReference):
             if binary_op.operandl.member == var_name:
+                self.count[class_method] = current_count
                 self.__track_variable_flow(f"{type(node).__name__}.{node.member}", binary_op.operandl.member)
 
         if isinstance(binary_op.operandr, javalang.tree.BinaryOperation):
             self.__process_binary_operation(binary_op.operandr, node, var_name, count, current_count)
+
         elif isinstance(binary_op.operandr, javalang.tree.MemberReference):
             if binary_op.operandr.member == var_name:
+                self.count[class_method] = current_count
                 self.__track_variable_flow(f"{type(node).__name__}.{node.member}", binary_op.operandr.member)
 
 
@@ -487,4 +613,53 @@ class TaintAnalysis:
                 for var_decl in EFC.var.declarators:
                     if isinstance(var_decl, javalang.tree.VariableDeclarator) and (count<current_count) :
                         var_name_2 = var_decl.name
+                        self.count[class_method] = current_count
                         self.__track_variable_flow(class_method, var_name_2,current_count) # for 문 끝날때 까지만 추적하도록 수정 필요
+
+
+    def __if_try(self, node, class_method, var_name, count, current_count):
+        try:
+            if isinstance(node.value, javalang.tree.ClassCreator):
+                for arg in node.value.arguments:
+                    if isinstance(arg, javalang.tree.ClassCreator):
+                        for inner_arg in arg.arguments:
+                            if isinstance(inner_arg, javalang.tree.MethodInvocation):
+                                if inner_arg.member == var_name and count < current_count:
+                                    self.count[class_method] = current_count
+                                    self.__track_variable_flow(class_method, inner_arg.member, current_count)
+        except Exception:
+            pass  # node.value가 없을 때 예외 처리
+
+
+
+    def __if_ternary(self, node, class_method, var_name, count, current_count):
+        try:
+            # TernaryExpression에서 직접 condition, if_true, if_false에 접근
+            condition = node.condition
+            true_expr = node.if_true
+            false_expr = node.if_false
+
+            # 조건, 참/거짓 식에서 taint 여부를 추적
+            try:
+                if isinstance(condition, javalang.tree.MemberReference) and condition.member == var_name:
+                    self.count[class_method] = current_count
+                    self.__track_variable_flow(class_method, condition.member, current_count)
+            except Exception:
+                pass
+
+            try:
+                if isinstance(true_expr, javalang.tree.MemberReference) and true_expr.member == var_name:
+                    self.count[class_method] = current_count
+                    self.__track_variable_flow(class_method, true_expr.member, current_count)
+            except Exception:
+                pass
+
+            try:
+                if isinstance(false_expr, javalang.tree.MemberReference) and false_expr.member == var_name:
+                    self.count[class_method] = current_count
+                    self.__track_variable_flow(class_method, false_expr.member, current_count)
+            except Exception:
+                pass
+
+        except Exception:
+            pass
