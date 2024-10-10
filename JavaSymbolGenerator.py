@@ -1,6 +1,7 @@
 import javalang
 from collections import defaultdict
 import json
+import javalang.tree
 
 class PseudoReflection:
     def __init__(self):
@@ -37,7 +38,8 @@ class PseudoReflection:
             "wait", "notify", "notifyAll",
             "instanceof",
             "synchronized",
-            "try", "catch", "finally", "throw", "throws"
+            "try", "catch", "finally", "throw", "throws",
+            "getAnnotation"
         ]
 
     def is_standard_library_method(self, class_name, method_name):
@@ -105,11 +107,16 @@ class JavaSymbolGenerator:
             if isinstance(path[-2], javalang.tree.EnumBody):
                 class_name = self.type_mapping[path[-3].name]
             elif isinstance(path[-2], javalang.tree.ClassCreator):
-                continue 
+                for i in range(-1, -len(path) -1, -1):
+                    if isinstance(path[i], javalang.tree.ClassDeclaration):
+                        class_name = self.type_mapping[path[i].name]
             else:
                 class_name = self.type_mapping[path[-2].name]
             method_signature = self._get_method_signature(class_name, node)
             self.symbols['MethodDeclaration'].append(method_signature)
+            if method_signature == "EvCacheProvider.get(String, Map)":
+                print(f"{class_name}.{node.name}", method_signature)
+                print(node.name)
             self.method_signatures[f"{class_name}.{node.name}"] = method_signature
 
     def _collect_method_calls(self, tree):
@@ -135,34 +142,46 @@ class JavaSymbolGenerator:
             if target_class:
                 self._categorize_method_call(target_class, node.member)
             else:
-                print(f"Could not infer type for: {node.qualifier}")
+                # print(f"Could not infer type for: {node.qualifier}")
+                pass
         else:
             self._analyze_no_qualifier_method_call(node, path)
 
     def _analyze_no_qualifier_method_call(self, node, path):
+        user_define = []
         method_name = node.member
         # print("no : ", self.current_class)
+        for md in self.symbols.get('MethodDeclaration', []):
+            user_define.append(md.split('.')[1].split('(')[0])
+      
         if self.current_class:
             full_method_name = f"{self.current_class}.{method_name}"
             if full_method_name in self.method_signatures:
                 self.symbols['UserDefinedMethodCall'].append(full_method_name)
                 return
 
-        if self.reflection.is_standard_library_method("java.lang", method_name):
-            self.symbols['StandardLibraryMethodCall'].append(f"java.lang.{method_name}")
-            return
-
         for import_name, import_path in self.imports.items():
             if import_name.endswith(method_name):
                 self.symbols['UserDefinedMethodCall'].append(f"{import_path}")
                 return
 
-        self.symbols['UnresolvedMethodCall'].append(method_name)
+        if self.reflection.is_standard_library_method("java.lang", method_name):
+            self.symbols['ResolvedMethodCall'].append(f"java.lang.{method_name}")
+            return
+        elif method_name in user_define:
+            self.symbols['ResolvedMethodCall'].append(method_name) # 수정 필요(클래스가 없음)
+        else:
+            self.symbols['UnresolvedMethodCall'].append(method_name)
 
     def _categorize_method_call(self, target_class, method_name):
+        user_define = []
         full_method_name = f"{target_class}.{method_name}"
-        if self.reflection.is_standard_library_method(target_class, method_name):
-            self.symbols['StandardLibraryMethodCall'].append(full_method_name)
+        imports_values = self.imports.values()
+        for md in self.symbols.get('MethodDeclaration', []):
+            user_define.append(md.split('.')[1].split('(')[0])
+        if self.reflection.is_standard_library_method(target_class, method_name) or target_class in imports_values or \
+            method_name in user_define:
+            self.symbols['ResolvedMethodCall'].append(full_method_name)
         elif full_method_name in self.method_signatures:
             self.symbols['UserDefinedMethodCall'].append(self.method_signatures[full_method_name])
         else:
@@ -208,7 +227,7 @@ class JavaSymbolGenerator:
                 "TypeDeclarations": self.symbols.get('TypeDeclaration', []),
                 "MethodDeclarations": self.symbols.get('MethodDeclaration', []),
                 "MethodCalls": {
-                    "StandardLibrary": self.symbols.get('StandardLibraryMethodCall', []),
+                    "Resolved": self.symbols.get('ResolvedMethodCall', []),
                     "UserDefined": self.symbols.get('UserDefinedMethodCall', []),
                     "Unresolved": self.symbols.get('UnresolvedMethodCall', [])
                 },
